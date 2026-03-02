@@ -1,0 +1,9 @@
+name: cloudbrain_frontend
+version: 0.1.0
+description: Cloudbrain Flutter 前端
+publish_to: 'none'
+environment:
+  sdk: ">=2.17.0 <4.0.0"
+dependencies:
+  flutter:
+    sdk: flutter
