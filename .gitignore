@@ -1,7 +1,9 @@
 node_modules/
 build/
+dist/
 .dart_tool/
 .idea/
 .vscode/
 .DS_Store
 .env
+backend/npm-cache

@@ -1,9 +1,26 @@
-name: cloudbrain_frontend
-version: 0.1.0
-description: Cloudbrain Flutter 前端
+name: cloudbrain
+description: CloudBrain - 多智能体系统前端
 publish_to: 'none'
+version: 1.0.0+1
+
 environment:
-  sdk: ">=2.17.0 <4.0.0"
+  sdk: '>=3.0.0 <4.0.0'
+
 dependencies:
   flutter:
     sdk: flutter
+  cupertino_icons: ^1.0.8
+  http: ^1.2.0
+  provider: ^6.1.2
+  go_router: ^14.0.0
+  shared_preferences: ^2.3.0
+  intl: ^0.19.0
+  flutter_markdown: ^0.7.4
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^5.0.0
+
+flutter:
+  uses-material-design: true
