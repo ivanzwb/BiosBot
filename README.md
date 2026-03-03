@@ -1,12 +1,12 @@
 # 全智能体架构文档
 
-> 本文档描述了多智能体系统的整体架构、技术选型与推荐项目结构，适用于本地和远程多端部署场景。
+> 本文档描述了多智能体系统的整体架构、技术选型与项目结构，适用于本地和远程多端部署场景。
 
 ## 一、功能描述（从用户视角）
 
 核心目标：提供一个可本地部署、可远程访问的多智能体系统，支持知识问答、任务自动化和数据分析。
 
-- 支持用户自然语言输入，自动识别意图与领域，路由到对应领域智能体（Agent）处理。
+- 支持用户自然语言输入，通过代理Agent，自动识别意图与领域，路由到对应领域智能体（Agent）处理，由代理Agent汇总输出。
 - 多领域智能体协作，涵盖财务、医疗、IT、法律、创作等场景。
 - 每个智能体可自主学习，持续更新自己的知识库（长期记忆）。
 - 支持 PC 本地部署，手机 App 或浏览器远程访问。
@@ -24,7 +24,7 @@
 
 ```mermaid
 graph LR
-用户输入 --> 意图识别/领域分类 --> 路由调度 --> 领域Agent --> 响应聚合 --> 用户输出
+用户输入 --> 代理Agent（意图识别/领域分类） --> 路由调度 --> 领域Agent --> 代理Agent（响应聚合） --> 用户输出
 ```
 
 ### 用户输入层
@@ -35,7 +35,7 @@ graph LR
 - 由代理 Agent 调用大模型识别意图、领域，输出结构化标签，例如：
 	- `intent`: `qa` / `task` / `chat` / `analyze` 等
 	- `domains`: `["finance", "law"]` 等复合领域
-- 对应实现一般位于 `backend/src/services/intent.service.ts`，其内部通过调用 `proxy-agent` 完成实际的意图识别逻辑，对外仍然提供纯函数式接口，便于单元测试。
+- 对应实现一般位于 `backend/src/services/intent.service.ts`，其内部通过调用基于 LangChain 实现的 `proxy-agent` 完成实际的意图识别逻辑，对外仍然提供纯函数式接口，便于单元测试。
 
 ### 路由调度层
 - 根据意图与领域标签选择一个或多个合适的 Agent，构建调用计划（单 Agent / 多 Agent 串行或并行）。
@@ -46,10 +46,11 @@ graph LR
 - 每个 Agent 有自己 RAG 数据库来存储自己的知识库（LanceDb，位于 `database/lancedb/<agent>`）。
 - 每个 Agent 可以配置自己的大模型（如不同云厂商/不同模型版本）。
 - 每个 Agent 有自己的 SKILL 集合，Skill 是可复用的子能力（如“提取财务指标”、“生成大纲”等）。
+- 各 Agent 内部通过 LangChain 的 Agent/Tool/Memory/Runnable 抽象组织 RAG、工具调用和长期记忆逻辑。
 
 ### 响应聚合层
 - 当多 Agent 协作完成任务时，需要统一代理Agent聚合响应（合并结果、去重、排序、摘要）。
-- 对应实现位于 `backend/src/services/aggregation.service.ts`，仅处理“如何合并多个 Agent 输出”。
+- 对应实现位于 `backend/src/services/aggregation.service.ts`，主要通过 LangChain 的 Chain/Runnable 组合，处理“如何合并多个 Agent 输出”。
 
 ### 日志与监控
 - 负责全链路日志记录、异常告警、性能指标采集。
@@ -59,10 +60,16 @@ graph LR
 - 负责基础安全能力，如本地访问控制、数据脱敏、速率限制等。
 - 主要通过 `backend/src/middlewares` 中的中间件实现，例如：IP 白名单、敏感字段脱敏等。单用户场景下通常不需要复杂的账号体系，只需保护本机数据安全即可。
 
+### 任务执行与恢复
+- 后端作为长驻服务运行，负责管理所有 Agent 任务的生命周期，前端 UI 仅作为“遥控器”和“显示器”。
+- 前端窗口最小化、关闭、应用退出或设备锁屏时，不会中断后端正在执行的任务；任务状态完全由后端控制。
+- 当前端重新打开或从后台恢复到前台时，需要主动从后端拉取最新数据（对话列表、当前对话消息、任务列表、各 Agent 与知识库状态等），刷新 UI 后再允许用户继续操作。
+- 后端在执行长任务时，会将任务状态、进度和中间结果持续写入 SQLite（以及必要时写入 LanceDb），以便在进程意外退出或升级重启后可以自动恢复或重试。
+
 ## 三、技术选型
 
 ### 后端
-- Node.js（Express）为主后端，推荐使用 TypeScript 提升可维护性。
+- Node.js（Express + LangChain JS）为主后端与智能体编排框架，推荐使用 TypeScript 提升可维护性。
 - 部署方式：
 	- 开发环境：本地 Node 直接运行，使用 `nodemon` 热重载。
 	- 生产环境：Docker 容器化部署，通过 `docker-compose` 一键启动。
@@ -71,7 +78,8 @@ graph LR
 	- Web：`express`, `cors`, `helmet`
 	- 数据库：`sqlite3`
 	- 日志：`winston`
-	- RAG：`lancedb` 相关 SDK
+	- RAG：`lancedb` 相关 SDK（通过 LangChain VectorStore 集成）
+	- 智能体编排：`langchain`（langchain-js）
 
 ### 前端/手机App
 - Flutter（桌面端、H5 页面、移动端均支持），统一一套 UI 代码，多端构建。
@@ -90,13 +98,14 @@ graph LR
 	- 展示内置 Agent 列表（proxy-agent、stock-agent、novel-agent 等）。
 	- 支持开启/关闭某个 Agent、编辑其名称、简介和可见性（是否出现在 UI 中）。
 	- 点击某个 Agent 可进入详情，查看其技能（skills）、工具（tools）和知识库状态（文档数量、最后更新时间等）。
-	- 支持每个 Agent 选择不同的模型
+	- 支持每个 Agent 从设置里大模型中选择不同的模型
 - 知识库管理：
 	- 按 Agent 维度展示已导入的文档/数据集列表。
 	- 提供“导入文档”入口（本地文件/文本粘贴），并显示向量化状态（排队中/已完成/失败）。
 	- 支持删除文档、重新向量化等操作。
+	- 可以手动在会话窗口可以把对话结果导入到知识库，当自动把对话摘要写入知识库关闭时。
 - 设置（Settings）：
-	- 大模型与 API Key 配置（OpenAI、阿里云、百度等）。
+	- 大模型与 API Key 配置（OpenAI、阿里云、百度等）， 可以让Agent使用。
 	- 代理设置（如使用国内代理/直连）、日志等级、主题（深色/浅色）。
 	- 数据相关设置：是否允许自动把对话摘要写入知识库等。
 - 引导与帮助（Onboarding/Help）：
@@ -109,6 +118,7 @@ graph LR
 	1. 用户在左侧点击“新建对话”。
 	2. 自动创建一个新的 conversation 记录，并在中间区域显示空白对话界面。
 	3. 用户输入问题并发送，前端带上 `conversationId` 调用 `/api/agent/invoke`。
+	4. 如果此时最小化、关闭窗口或锁屏，后端仍继续执行；用户下次打开应用或从后台恢复时，通过重新加载该 `conversationId` 下的 `messages` 与 `tasks`，看到已完成或进行中的结果。
 
 - 查看并管理 Agent：
 	1. 用户从侧边栏进入“Agent 管理”。
@@ -119,15 +129,20 @@ graph LR
 	1. 用户在“知识库管理”中选择目标 Agent。
 	2. 点击“导入文档”，上传本地文件或粘贴文本。
 	3. 前端将文件/文本与 Agent 标识一起提交到 `/api/agent/invoke` 或专门的 `/api/agent/ingest` 接口。
-	4. 后端完成解析与向量化后，前端在列表中更新文档状态与统计信息。
+	4. 后端完成解析与向量化后，前端在列表中更新文档状态与统计信息；如果过程中前端最小化、关闭或进入后台，下次打开会从 `tasks` 和 `agent_logs` 中恢复并刷新状态。
+
+- 应用重新打开/从后台恢复：
+	1. 应用启动或从后台回到前台时，首先调用后端接口获取最新的对话列表、当前选中对话的消息、未完成任务列表以及各 Agent/知识库状态。
+	2. 前端根据返回的数据重建 UI 状态（侧边栏列表、消息区、任务进度、Agent/知识库面板等）。
+	3. 在数据刷新完成后，用户可以继续在现有对话中提问或发起新任务。
 
 ### 数据存储
-- SQLite（本地）记录对话、系统配置等结构化数据，默认单用户场景，不涉及多账号管理。
+- SQLite（本地）记录对话、任务、系统配置等结构化数据，默认单用户场景，不涉及多账号管理。
 - 如需并行多实例，可为每个实例使用独立的 SQLite 文件，避免锁冲突。
 
 ### 长期记忆与知识增强
 - LanceDb（本地）作为向量数据库，用于存储文本、文档等的 Embedding 向量，实现 RAG 能力。
-- 每个 Agent 维护自己的向量库，目录建议为 `database/lancedb/<agent-name>`。
+- 每个 Agent 维护自己的向量库，目录建议为 `database/lancedb/<agent-name>`，通过 LangChain 的向量存储与 Retriever 接口进行访问。
 
 ### 网络与安全
 - 对外统一通过 HTTPS（如使用 Let’s Encrypt 自动签发证书）。
@@ -139,9 +154,18 @@ graph LR
 	- `conversations`：对话表（id, title, created_at, status 等），用于区分不同对话/任务线程。
 	- `messages`：消息表（id, conversation_id, role, content, created_at）。
 	- `agent_logs`：Agent 调用日志（id, conversation_id, agent_id, input, output, latency_ms, success_flag 等）。
-	- `configs`：系统与 Agent 配置（key, value, scope 等），便于做界面化配置。
+	- `tasks`：长任务表（id, conversation_id, type, status, payload, result, created_at, updated_at, last_heartbeat_at, error 等），用于跟踪需要恢复/重试的任务。
+	- `configs`：系统与 Agent 配置（key, value, scope 等），便于做界面化配置，**模型与 Agent 的集中绑定关系以数据库为唯一真源，存放在此表或专门的 `agents` / `agent_models` 等配置表中**。
 
 - 其中 `agent_logs` 与 LanceDb 中的向量数据通过文档 ID 进行关联，便于从日志追溯到使用过的知识片段。
+- 字段类型与枚举值建议（示例）：
+	- `conversations.status`：`active` | `archived` | `closed`。
+	- `messages.role`：`user` | `assistant` | `system` | `agent`。
+	- `tasks.status`：`pending`（已创建，等待执行）| `running`（执行中）| `succeeded`（成功完成）| `failed`（执行失败，error 字段记录原因）| `canceled`（已取消，不再重试）。
+	- `tasks.type`：`agent_invoke`（普通对话/任务）| `ingest`（知识库导入/向量化）| `maintenance`（清理、重建索引等后台任务）。
+	- `tasks.payload` / `tasks.result`：存储为 JSON 字符串，包含与具体任务相关的输入/输出详情。
+	- `agent_logs.success_flag`：布尔值，标记本次 Agent 调用是否成功。
+	- `configs.key` 示例：`"agent_model_mapping"`（集中存放 Agent 与模型的映射关系）、`"default_model"` 等，value 存放 JSON 字符串，后端启动和运行时始终以数据库中的配置为准。
 
 ---
 **术语说明：**
@@ -158,6 +182,45 @@ graph LR
 	- `aliyun.client.ts`
 	- `baidu.client.ts`
 - 用户可在配置文件或管理界面中为不同 Agent 选择不同的模型供应商与模型版本。
+- LangChain 作为统一的 LLM 抽象层，业务代码优先依赖 LangChain 的 LLM/ChatModel 接口，由 integrations 提供底层客户端实现。
+
+#### 模型与 Agent 配置示例
+
+- 将「Agent 与模型」的绑定关系集中存放在 SQLite 数据库中，以数据库为唯一真源：
+	- 可以在 `configs` 表中使用 `key = "agent_model_mapping"` 存一条 JSON 配置；
+	- 或者设计专门的 `agents` / `agent_models` / `agent_settings` 等表，便于更细粒度管理；
+	- 后端启动时从数据库加载这些配置，并可通过管理界面/API 在线修改，修改后立即生效。
+- 下例是存放在 `configs.value`（或专门配置表的 value 字段）中的伪 JSON 结构示例：
+	```json
+	{
+	  "defaultModel": {
+	    "provider": "openai",
+	    "model": "gpt-4.5-mini"
+	  },
+	  "agents": {
+	    "proxy-agent": {
+	      "enabled": true,
+	      "model": { "provider": "openai", "model": "gpt-4.5-mini" }
+	    },
+	    "stock-agent": {
+	      "enabled": true,
+	      "model": { "provider": "aliyun", "model": "qwen-long" }
+	    },
+	    "novel-agent": {
+	      "enabled": true,
+	      "model": { "provider": "openai", "model": "gpt-4.5-large" }
+	    }
+	  }
+	}
+	```
+
+- 后端中的 `backend/src/config` 模块只负责读取数据库配置（必要时提供默认种子数据），不再作为模型与 Agent 关系的长期存储位置。
+
+- 环境变量约定（示例）：
+	- `OPENAI_API_KEY`、`ALIYUN_API_KEY`、`BAIDU_API_KEY`：各云厂商访问凭证。
+	- `SQLITE_DB_PATH`：SQLite 数据库文件路径（如 `./database/cloudbrain.db`）。
+	- `LANCEDB_DIR`：LanceDb 数据目录（如 `./database/lancedb`）。
+	- `PORT`：后端服务监听端口（默认可选 3000/8000）。
 
 ## 四、项目结构
 
@@ -199,6 +262,7 @@ cloudbrain/
 |	|	│   │   │   │   ├── memory/           # 本 Agent 的长期/短期记忆抽象
 |	|	│   │   │   │   └── index.ts          # 对外暴露的统一调用入口
 │   │   │   ├── novel-agent/          # 小说/创作 Agent（结构同上）
+│   │   │   ├── movie-agent/          # 视频/创作 Agent（结构同上）
 │   │   │   └── ...
 │   │   ├── models/                   # 数据模型（如 SQLite ORM 定义）
 │   │   │   ├── user.model.ts
@@ -268,6 +332,7 @@ cloudbrain/
 ## 五、模块职责说明（按目录）
 
 - backend/src/config：集中管理环境变量、Agent 与模型配置，确保多环境（开发/测试/生产）行为一致、可追踪。
+ - backend/src/config：集中管理环境变量，并提供从数据库加载 Agent 与模型配置的封装，确保多环境（开发/测试/生产）行为一致、可追踪，以数据库为唯一真源。
 - backend/src/routes + controllers：负责 HTTP 接口定义与入参/出参规范，不写复杂业务，只做编排与校验。
 - backend/src/services：承载主要业务逻辑，如意图识别、路由调度、响应聚合、用户 & 权限处理等。
 - backend/src/agents：每个子目录是一个领域 Agent，内部通过 rag + prompts + tools + skills + memory 组织其知识库、工具调用和长期记忆能力。
@@ -311,6 +376,97 @@ cloudbrain/
 	- `message`：错误描述。
 	- `detail`：可选，便于调试的详细信息。
 
+#### 6.2.1 接口 JSON 示例
+
+- `POST /api/intent/classify`
+	- 请求：
+		```json
+		{
+		  "query": "帮我分析这份财报",
+		  "conversationId": "conv_123"
+		}
+		```
+	- 响应：
+		```json
+		{
+		  "intent": "analyze",
+		  "domains": ["finance"],
+		  "confidence": 0.93
+		}
+		```
+
+- `POST /api/agent/invoke`
+	- 请求（通用调用入口，通常传给 proxy-agent）：
+		```json
+		{
+		  "conversationId": "conv_123",
+		  "agentId": "proxy-agent",
+		  "query": "根据这份财报给我一个结论",
+		  "context": {
+		    "extra": "可选的外部数据"
+		  },
+		  "options": {
+		    "temperature": 0.2,
+		    "maxTokens": 1024
+		  }
+		}
+		```
+	- 响应：
+		```json
+		{
+		  "taskId": "task_456",
+		  "status": "pending",
+		  "answer": null
+		}
+		```
+	- 后端会异步推进任务执行，前端可通过轮询任务列表或 WebSocket 获取最终 `answer` 与中间进度。
+
+- `GET /api/agents`
+	- 响应：
+		```json
+		[
+		  {
+		    "id": "proxy-agent",
+		    "name": "通用代理 Agent",
+		    "enabled": true,
+		    "description": "负责意图识别、多 Agent 编排与结果聚合",
+		    "defaultModel": {
+		      "provider": "openai",
+		      "model": "gpt-4.5-mini"
+		    }
+		  },
+		  {
+		    "id": "stock-agent",
+		    "name": "股票分析 Agent",
+		    "enabled": true,
+		    "description": "面向股票/财报分析，具备专用 RAG 知识库"
+		  }
+		]
+		```
+
+- `POST /api/agent/ingest`（建议的知识库导入接口）
+	- 请求（示例为文本导入）：
+		```json
+		{
+		  "agentId": "stock-agent",
+		  "conversationId": "conv_123",
+		  "documents": [
+		    {
+		      "id": "doc_001",
+		      "title": "2024 Q1 财报",
+		      "content": "......"
+		    }
+		  ]
+		}
+		```
+	- 响应：
+		```json
+		{
+		  "taskId": "task_ingest_789",
+		  "status": "pending"
+		}
+		```
+
 ### 6.3 Agent 目录与实现约定
 
 以 `stock-agent` 为例，每个 Agent 目录内建议包含：
@@ -322,7 +478,24 @@ cloudbrain/
 - `memory/`：对会话级记忆与长期知识的统一抽象（如最近 N 轮对话）。
 - `index.ts`：导出该 Agent 的对外调用入口函数，例如 `runStockAgent(input)`。
 
-### 6.4 proxy-agent 职责与调用流程
+### 6.4 内置 Agent 列表与职责（示例）
+
+- `proxy-agent`：
+	- 角色：中枢代理 Agent。
+	- 能力：意图识别、领域分类、多 Agent 工作流编排、结果聚合。
+- `stock-agent`：
+	- 角色：金融/股票分析 Agent。
+	- 能力：解析和分析财报、计算常见财务指标、结合 RAG 知识库给出投资相关解读和风险提示。
+- `novel-agent`：
+	- 角色：小说/长文创作 Agent。
+	- 能力：根据设定人物/世界观进行故事创作、续写、润色，支持章节结构规划与风格控制。
+- `movie-agent`：
+	- 角色：视频/脚本创作 Agent。
+	- 能力：生成视频脚本大纲、镜头脚本、分场景文案，可与其它 Agent（如 `novel-agent`）协作完成长内容创作。
+
+（实际项目可在此基础上增删 Agent，并在 `agents.config` 中配置其启用状态和绑定模型。）
+
+### 6.5 proxy-agent 职责与调用流程
 
 proxy-agent 作为“中枢代理”，主要负责：
 
@@ -336,9 +509,17 @@ proxy-agent 作为“中枢代理”，主要负责：
 - `intent.service.ts` 只负责把 HTTP 请求转换为标准化输入结构，调用 `runProxyAgent`，并把结果再转换为 HTTP 响应，不直接写业务逻辑。
 - proxy-agent 内部可根据 `intent` 决定：是直接回答、转发给单一 Agent，还是构造一个多 Agent 工作流（workflow）。
 
+### 6.6 LangChain 使用约定
+
+- 每个 Agent 的 `index.ts` 推荐导出一个基于 LangChain 的 `Runnable` 或 `AgentExecutor`，供 `proxy-agent` 和路由层统一调用。
+- `rag/` 内部基于 LangChain 的 `VectorStore` + `Retriever` 封装知识检索逻辑，避免业务代码直接操作 LanceDb 客户端。
+- `tools/` 目录中的工具实现 LangChain 的 Tool 接口，方便在 Agent 内部组合和复用。
+- `memory/` 采用 LangChain 的 Memory 抽象（如 ConversationBufferMemory、自定义 Memory），负责维护会话上下文与长期记忆的读写。
+- 通过 LangChain 的 Chain/Runnable 组合，将多 Agent 协作流程抽象为可复用的“工作流”，由 `proxy-agent` 统一编排。
+
 ## 七、部署方案
 
 - **PC本地部署**：后端服务、数据库、前端均可运行于普通PC，推荐Docker一键部署。
-- **手机App远程访问**：App通过HTTPS/WebSocket连接PC后端，支持内网穿透。
+- **手机App远程访问**：App通过HTTPS/WebSocket连接PC后端。
 - 支持个人、团队、企业多场景，易于扩展和维护。
 
