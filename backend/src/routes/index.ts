@@ -6,7 +6,7 @@
 
 import { Router } from 'express';
 import { healthCheck } from '../controllers/health.controller';
-import { listAgents, refreshAgents } from '../controllers/agent.controller';
+import { listAgents, refreshAgents, updateAgentConfig, createAgentConfig, deleteAgentConfig, listSkills, createSkill, updateSkill, deleteSkill, listTools, createTool, updateTool, deleteTool, scriptUploadMiddleware, uploadToolScript } from '../controllers/agent.controller';
 import intentRoutes from './intent.routes';
 import agentRoutes from './agent.routes';
 import chatRoutes from './chat.routes';
@@ -27,8 +27,31 @@ router.use('/agent', agentRoutes);
 // Agent 列表（独立路径 /api/agents）
 router.get('/agents', listAgents);
 
+// 创建 Agent
+router.post('/agents', createAgentConfig);
+
 // 手动刷新 Agent 发现
 router.post('/agents/refresh', refreshAgents);
+
+// 更新 Agent 配置
+router.put('/agents/:id/config', updateAgentConfig);
+
+// Skill CRUD
+router.get('/agents/:id/skills', listSkills);
+router.post('/agents/:id/skills', createSkill);
+router.put('/agents/:id/skills/:skillId', updateSkill);
+router.delete('/agents/:id/skills/:skillId', deleteSkill);
+
+// Tool CRUD
+router.get('/agents/:id/tools', listTools);
+router.post('/agents/:id/tools', createTool);
+router.put('/agents/:id/tools/:toolId', updateTool);
+router.delete('/agents/:id/tools/:toolId', deleteTool);
+// Tool Script Upload
+router.post('/agents/:id/tools/:toolId/script', scriptUploadMiddleware, uploadToolScript);
+
+// 删除 Agent
+router.delete('/agents/:id', deleteAgentConfig);
 
 // 对话管理
 router.use('/conversations', chatRoutes);

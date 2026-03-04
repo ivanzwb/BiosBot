@@ -7,3 +7,5 @@ dist/
 .DS_Store
 .env
 backend/npm-cache
+database/
+backend/agents/*/lancedb/

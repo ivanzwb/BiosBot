@@ -16,7 +16,7 @@ class _OnboardingPageState extends State<OnboardingPage> {
     _OnboardingStep(
       icon: Icons.key,
       title: '配置 API Key',
-      description: '前往设置页面，填入你的 OpenAI、阿里云或百度等大模型 API Key，Agent 才能正常工作。',
+      description: '前往设置页面，填入你的 API Key 和 API URL，Agent 才能正常工作。所有模型均通过 OpenAI 兼容接口调用。',
     ),
     _OnboardingStep(
       icon: Icons.smart_toy,

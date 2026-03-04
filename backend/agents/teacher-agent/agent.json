@@ -1,0 +1,7 @@
+{
+  "id": "teacher-agent",
+  "name": "老师/讲解 Agent",
+  "description": "根据用户提供的题目或知识点进行讲解、推导步骤、举例说明，可配合 proxy-agent 完成复合教学任务。",
+  "labels": ["题目讲解", "知识点解释", "步骤推导", "举例说明"],
+  "defaultTemperature": 0.5
+}

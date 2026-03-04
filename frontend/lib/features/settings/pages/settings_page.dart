@@ -12,9 +12,9 @@ class SettingsPage extends StatefulWidget {
 }
 
 class _SettingsPageState extends State<SettingsPage> {
-  final _openaiController = TextEditingController();
-  final _aliyunController = TextEditingController();
-  final _baiduController = TextEditingController();
+  final _apiKeyController = TextEditingController();
+  final _apiUrlController = TextEditingController();
+  final _modelController = TextEditingController();
 
   @override
   void initState() {
@@ -22,17 +22,17 @@ class _SettingsPageState extends State<SettingsPage> {
     WidgetsBinding.instance.addPostFrameCallback((_) async {
       final vm = context.read<SettingsViewModel>();
       await vm.loadConfigs();
-      _openaiController.text = vm.apiKeys['openai']?.toString() ?? '';
-      _aliyunController.text = vm.apiKeys['aliyun']?.toString() ?? '';
-      _baiduController.text = vm.apiKeys['baidu']?.toString() ?? '';
+      _apiKeyController.text = vm.apiKey;
+      _apiUrlController.text = vm.apiUrl;
+      _modelController.text = vm.defaultModel;
     });
   }
 
   @override
   void dispose() {
-    _openaiController.dispose();
-    _aliyunController.dispose();
-    _baiduController.dispose();
+    _apiKeyController.dispose();
+    _apiUrlController.dispose();
+    _modelController.dispose();
     super.dispose();
   }
 
@@ -56,53 +56,51 @@ class _SettingsPageState extends State<SettingsPage> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                // API Keys 配置
-                Text('大模型 API Key 配置',
+                // 模型配置
+                Text('大模型配置',
                     style: Theme.of(context).textTheme.titleLarge),
                 const SizedBox(height: 8),
                 Text(
-                  '在此配置各大模型供应商的 API Key，Agent 将使用这些 Key 调用对应的大模型服务。',
+                  '所有模型均通过 OpenAI 兼容 API 调用，配置统一的 API Key、API URL 和默认模型即可。',
                   style: Theme.of(context).textTheme.bodyMedium?.copyWith(
                         color: Theme.of(context).colorScheme.outline,
                       ),
                 ),
                 const SizedBox(height: 16),
                 _ApiKeyField(
-                  label: 'OpenAI API Key',
-                  controller: _openaiController,
+                  label: 'API Key',
+                  controller: _apiKeyController,
                   hint: 'sk-...',
                 ),
                 const SizedBox(height: 12),
-                _ApiKeyField(
-                  label: '阿里云 API Key',
-                  controller: _aliyunController,
-                  hint: '输入阿里云 API Key',
+                TextField(
+                  controller: _apiUrlController,
+                  decoration: const InputDecoration(
+                    labelText: 'API URL',
+                    hintText: 'https://api.openai.com/v1（留空使用默认）',
+                  ),
                 ),
                 const SizedBox(height: 12),
-                _ApiKeyField(
-                  label: '百度 API Key',
-                  controller: _baiduController,
-                  hint: '输入百度 API Key',
+                TextField(
+                  controller: _modelController,
+                  decoration: const InputDecoration(
+                    labelText: '默认模型',
+                    hintText: 'gpt-4.1-mini',
+                  ),
                 ),
                 const SizedBox(height: 24),
                 FilledButton.icon(
                   icon: const Icon(Icons.save),
-                  label: const Text('保存 API Keys'),
+                  label: const Text('保存'),
                   onPressed: () async {
-                    final keys = <String, String>{};
-                    if (_openaiController.text.isNotEmpty) {
-                      keys['openai'] = _openaiController.text;
-                    }
-                    if (_aliyunController.text.isNotEmpty) {
-                      keys['aliyun'] = _aliyunController.text;
-                    }
-                    if (_baiduController.text.isNotEmpty) {
-                      keys['baidu'] = _baiduController.text;
-                    }
-                    await vm.saveApiKeys(keys);
+                    await vm.saveSettings(
+                      apiKey: _apiKeyController.text,
+                      apiUrl: _apiUrlController.text,
+                      defaultModel: _modelController.text,
+                    );
                     if (context.mounted) {
                       ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(content: Text('API Keys 已保存')),
+                        const SnackBar(content: Text('设置已保存')),
                       );
                     }
                   },

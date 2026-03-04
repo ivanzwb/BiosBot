@@ -1,0 +1,641 @@
+/* ============================================================
+   AgentConfigModal — 弹窗配置单个 Agent 的模型映射
+   ============================================================ */
+
+.overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.4);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+  animation: fadeIn 0.15s ease;
+}
+
+.modal {
+  background: var(--color-surface);
+  border-radius: 12px;
+  width: 780px;
+  max-width: 92vw;
+  height: 80vh;
+  max-height: 80vh;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.15);
+  animation: slideUp 0.2s ease;
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+@keyframes slideUp {
+  from { opacity: 0; transform: translateY(16px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+/* --- Header --- */
+.header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 20px 24px 0;
+}
+.header h2 {
+  font-size: 17px;
+  font-weight: 700;
+}
+.closeBtn {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 14px;
+  color: var(--color-text-secondary);
+  transition: background 0.15s;
+}
+.closeBtn:hover {
+  background: var(--color-bg);
+}
+
+/* --- Body --- */
+.body {
+  padding: 16px 24px 0;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.loadingText {
+  padding: 40px;
+  text-align: center;
+  color: var(--color-text-secondary);
+}
+
+/* ID row */
+.idRow {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 13px;
+}
+.idLabel {
+  color: var(--color-text-secondary);
+}
+.idValue {
+  font-family: 'SF Mono', 'Cascadia Code', 'Fira Code', monospace;
+  background: var(--color-bg);
+  padding: 2px 8px;
+  border-radius: 4px;
+  font-size: 12px;
+}
+
+/* Toggle switch */
+.switchRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 14px;
+  font-weight: 500;
+  cursor: pointer;
+  position: relative;
+}
+.switchRow input {
+  position: absolute;
+  opacity: 0;
+  width: 0;
+  height: 0;
+}
+.toggle {
+  display: inline-block;
+  width: 40px;
+  height: 22px;
+  border-radius: 11px;
+  background: #cbd5e1;
+  position: relative;
+  transition: background 0.2s;
+}
+.toggle::after {
+  content: '';
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: #fff;
+  transition: transform 0.2s;
+}
+.toggle.on {
+  background: var(--color-primary);
+}
+.toggle.on::after {
+  transform: translateX(18px);
+}
+
+/* Fieldset */
+.fieldset {
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius);
+  padding: 14px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.fieldset legend {
+  font-size: 13px;
+  font-weight: 600;
+  padding: 0 6px;
+  color: var(--color-text-secondary);
+}
+
+.hint {
+  font-size: 12px;
+  color: var(--color-text-secondary);
+  line-height: 1.5;
+}
+
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 13px;
+}
+.field span {
+  font-weight: 500;
+  color: var(--color-text-secondary);
+}
+.field input,
+.field select {
+  padding: 8px 10px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius);
+  font-size: 13px;
+  background: var(--color-bg);
+  transition: border-color 0.15s;
+}
+.field input:focus,
+.field select:focus {
+  outline: none;
+  border-color: var(--color-primary);
+}
+
+.select {
+  padding: 8px 10px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius);
+  font-size: 13px;
+  background: var(--color-bg);
+  transition: border-color 0.15s;
+  cursor: pointer;
+}
+.select:focus {
+  outline: none;
+  border-color: var(--color-primary);
+}
+
+/* Footer */
+.footer {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 10px;
+  padding: 12px 24px 20px;
+  flex-shrink: 0;
+  border-top: 1px solid var(--color-border);
+}
+
+.toast {
+  font-size: 12px;
+  color: var(--color-primary);
+  margin-right: auto;
+}
+
+.cancelBtn {
+  padding: 8px 16px;
+  border-radius: var(--radius);
+  font-size: 13px;
+  color: var(--color-text-secondary);
+  background: var(--color-bg);
+  transition: background 0.15s;
+}
+.cancelBtn:hover {
+  background: var(--color-border);
+}
+
+.saveBtn {
+  padding: 8px 20px;
+  border-radius: var(--radius);
+  background: var(--color-primary);
+  color: #fff;
+  font-size: 13px;
+  font-weight: 500;
+  transition: background 0.15s;
+}
+.saveBtn:hover:not(:disabled) {
+  background: var(--color-primary-hover);
+}
+.saveBtn:disabled {
+  opacity: 0.5;
+}
+
+/* ===== Knowledge Base section ===== */
+.kbActions {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.kbImportBtn,
+.kbClearBtn,
+.kbRefreshBtn {
+  padding: 5px 12px;
+  border-radius: var(--radius);
+  font-size: 12px;
+  transition: background 0.15s;
+}
+.kbImportBtn {
+  background: var(--color-primary);
+  color: #fff;
+}
+.kbImportBtn:hover { background: var(--color-primary-hover); }
+.kbClearBtn {
+  background: var(--color-bg);
+  color: #f87171;
+}
+.kbClearBtn:hover { background: #3a2020; }
+.kbRefreshBtn {
+  background: var(--color-bg);
+  color: var(--color-text-secondary);
+  padding: 5px 8px;
+}
+.kbRefreshBtn:hover { background: var(--color-border); }
+
+.kbImportForm {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px;
+  background: var(--color-bg);
+  border-radius: var(--radius);
+}
+
+.kbModeTabs {
+  display: flex;
+  gap: 4px;
+  margin-bottom: 4px;
+}
+
+.kbModeTab {
+  padding: 5px 12px;
+  border-radius: var(--radius);
+  font-size: 12px;
+  color: var(--color-text-secondary);
+  background: transparent;
+  transition: all 0.15s;
+}
+.kbModeTab:hover {
+  background: var(--color-surface);
+}
+.kbModeActive {
+  background: var(--color-surface);
+  color: var(--color-primary);
+  font-weight: 600;
+}
+
+.kbFileLabel {
+  display: block;
+  cursor: pointer;
+}
+
+.kbFileDrop {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 80px;
+  border: 2px dashed var(--color-border);
+  border-radius: var(--radius);
+  font-size: 13px;
+  color: var(--color-text-secondary);
+  text-align: center;
+  padding: 16px;
+  transition: border-color 0.15s, background 0.15s;
+}
+.kbFileLabel:hover .kbFileDrop {
+  border-color: var(--color-primary);
+  background: rgba(37, 99, 235, 0.05);
+}
+
+.kbFileInput {
+  display: none;
+}
+
+.kbTextarea {
+  padding: 8px 10px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius);
+  font-size: 13px;
+  font-family: inherit;
+  background: var(--color-surface);
+  color: var(--color-text);
+  resize: vertical;
+  transition: border-color 0.15s;
+}
+.kbTextarea:focus {
+  outline: none;
+  border-color: var(--color-primary);
+}
+
+/* --- Temperature slider --- */
+.tempRow {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.tempSlider {
+  flex: 1;
+  height: 4px;
+  accent-color: var(--color-primary);
+  cursor: pointer;
+}
+
+.tempValue {
+  font-size: 13px;
+  font-weight: 600;
+  min-width: 28px;
+  text-align: center;
+  color: var(--color-primary);
+}
+
+.kbImportActions {
+  display: flex;
+  gap: 8px;
+}
+
+.kbDocList {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  max-height: 200px;
+  overflow-y: auto;
+}
+
+.kbDocItem {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 6px 10px;
+  background: var(--color-bg);
+  border-radius: var(--radius);
+  font-size: 13px;
+}
+
+.kbDocInfo {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+
+.kbDocTitle {
+  color: var(--color-text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.kbDocChunks {
+  color: var(--color-text-secondary);
+  font-size: 11px;
+  flex-shrink: 0;
+}
+
+.kbDocDelete {
+  font-size: 16px;
+  line-height: 1;
+  color: var(--color-text-secondary);
+  padding: 2px 6px;
+  border-radius: 4px;
+  flex-shrink: 0;
+}
+.kbDocDelete:hover {
+  background: #3a2020;
+  color: #f87171;
+}
+
+/* ===== Skill item ===== */
+.skillItem {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 6px 10px;
+  background: var(--color-bg);
+  border-radius: var(--radius);
+  font-size: 13px;
+}
+
+.skillActions {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  flex-shrink: 0;
+}
+
+.skillEditBtn {
+  font-size: 13px;
+  line-height: 1;
+  color: var(--color-text-secondary);
+  padding: 2px 6px;
+  border-radius: 4px;
+  flex-shrink: 0;
+}
+.skillEditBtn:hover {
+  background: var(--color-border);
+  color: var(--color-primary);
+}
+
+/* ===== Tool management ===== */
+.toolParamsSection {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.toolParamsHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.toolParamsLabel {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--color-text-secondary);
+}
+
+.toolParamAddBtn {
+  font-size: 12px;
+  padding: 2px 10px;
+  border-radius: var(--radius);
+  color: var(--color-primary);
+  background: transparent;
+  transition: background 0.15s;
+}
+.toolParamAddBtn:hover {
+  background: var(--color-surface);
+}
+
+.toolParamRow {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.toolParamInput {
+  flex: 1;
+  min-width: 0;
+  padding: 5px 8px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius);
+  font-size: 12px;
+  background: var(--color-surface);
+  color: var(--color-text);
+}
+.toolParamInput:focus {
+  outline: none;
+  border-color: var(--color-primary);
+}
+
+.toolParamType {
+  width: 80px;
+  padding: 5px 4px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius);
+  font-size: 12px;
+  background: var(--color-surface);
+  color: var(--color-text);
+  cursor: pointer;
+}
+
+.toolParamDesc {
+  flex: 2;
+  min-width: 0;
+  padding: 5px 8px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius);
+  font-size: 12px;
+  background: var(--color-surface);
+  color: var(--color-text);
+}
+.toolParamDesc:focus {
+  outline: none;
+  border-color: var(--color-primary);
+}
+
+.toolParamReq {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  font-size: 11px;
+  color: var(--color-text-secondary);
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.toolParamRemove {
+  font-size: 16px;
+  line-height: 1;
+  color: var(--color-text-secondary);
+  padding: 2px 4px;
+  border-radius: 4px;
+}
+.toolParamRemove:hover {
+  background: #3a2020;
+  color: #f87171;
+}
+
+.toolHandlerSection {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.toolHandlerRow {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+}
+
+.toolHandlerUrl {
+  flex: 1;
+  min-width: 0;
+  padding: 6px 8px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius);
+  font-size: 12px;
+  font-family: 'SF Mono', 'Cascadia Code', 'Fira Code', monospace;
+  background: var(--color-surface);
+  color: var(--color-text);
+}
+.toolHandlerUrl:focus {
+  outline: none;
+  border-color: var(--color-primary);
+}
+
+.toolToggleBtn {
+  font-size: 13px;
+  line-height: 1;
+  padding: 2px 4px;
+  border-radius: 4px;
+  opacity: 0.5;
+  cursor: pointer;
+  transition: opacity 0.15s;
+}
+.toolToggleBtn.toolEnabled {
+  opacity: 1;
+}
+
+/* ===== Tab Bar ===== */
+.tabBar {
+  display: flex;
+  gap: 0;
+  border-bottom: 1px solid var(--color-border);
+  flex-shrink: 0;
+}
+.tabItem {
+  padding: 8px 14px;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--color-text-secondary);
+  border: none;
+  background: none;
+  cursor: pointer;
+  border-bottom: 2px solid transparent;
+  transition: color 0.15s, border-color 0.15s;
+  white-space: nowrap;
+}
+.tabItem:hover {
+  color: var(--color-text);
+}
+.tabActive {
+  color: var(--color-primary);
+  border-bottom-color: var(--color-primary);
+}
+
+/* ===== Tab Panel (scrollable) ===== */
+.tabPanel {
+  flex: 1;
+  overflow-y: auto;
+  padding: 16px 0 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}

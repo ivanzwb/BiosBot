@@ -34,6 +34,11 @@ export interface SkillRunnerOptions {
    * 会与 use_skill 工具一起绑定到 ChatModel 上。
    */
   extraTools?: DynamicStructuredTool[];
+  /**
+   * 短期记忆：对话历史消息列表。
+   * 插入到 system prompt 和当前 user message 之间，为 LLM 提供上下文。
+   */
+  historyMessages?: BaseMessage[];
 }
 
 /**
@@ -48,7 +53,7 @@ export interface SkillRunnerOptions {
  * 若无可用 Skill 且无 extraTools，退化为普通 LLM 调用（无 tool binding）。
  */
 export async function runWithSkills(options: SkillRunnerOptions): Promise<string> {
-  const { chat, skills, systemPrompt, userMessage, extraTools = [] } = options;
+  const { chat, skills, systemPrompt, userMessage, extraTools = [], historyMessages = [] } = options;
 
   // 收集所有工具
   const skillTools = createSkillTools(skills);
@@ -58,6 +63,7 @@ export async function runWithSkills(options: SkillRunnerOptions): Promise<string
   if (allTools.length === 0) {
     const response = await chat.invoke([
       new SystemMessage(systemPrompt),
+      ...historyMessages,
       new HumanMessage(userMessage),
     ]);
     return typeof response.content === 'string' ? response.content : JSON.stringify(response.content);
@@ -70,11 +76,12 @@ export async function runWithSkills(options: SkillRunnerOptions): Promise<string
     : systemPrompt;
 
   // 2. 绑定工具
-  const chatWithTools = chat.bindTools(allTools);
+  const chatWithTools = chat.bindTools!(allTools);
 
-  // 3. 初始消息
+  // 3. 初始消息（SystemMessage → 历史消息 → 当前 HumanMessage）
   const messages: BaseMessage[] = [
     new SystemMessage(fullSystemPrompt),
+    ...historyMessages,
     new HumanMessage(userMessage),
   ];
 

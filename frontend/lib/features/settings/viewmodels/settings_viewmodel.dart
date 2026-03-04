@@ -6,8 +6,14 @@ import '../../../services/agent_service.dart';
 class SettingsViewModel extends ChangeNotifier {
   final AgentService _agentService = AgentService();
 
-  Map<String, dynamic> _apiKeys = {};
-  Map<String, dynamic> get apiKeys => _apiKeys;
+  String _apiKey = '';
+  String get apiKey => _apiKey;
+
+  String _apiUrl = '';
+  String get apiUrl => _apiUrl;
+
+  String _defaultModel = '';
+  String get defaultModel => _defaultModel;
 
   Map<String, dynamic> _agentModelMapping = {};
   Map<String, dynamic> get agentModelMapping => _agentModelMapping;
@@ -30,11 +36,14 @@ class SettingsViewModel extends ChangeNotifier {
         final key = cfg['key'] as String;
         try {
           final value = jsonDecode(cfg['value'] as String);
-          if (key == 'api_keys') {
-            _apiKeys = value is Map<String, dynamic> ? value : {};
+          if (key == 'api_key') {
+            _apiKey = value is String ? value : '';
+          } else if (key == 'api_url') {
+            _apiUrl = value is String ? value : '';
           } else if (key == 'agent_model_mapping') {
             _agentModelMapping =
                 value is Map<String, dynamic> ? value : {};
+            _defaultModel = _agentModelMapping['defaultModel']?.toString() ?? '';
           }
         } catch (_) {}
       }
@@ -46,29 +55,26 @@ class SettingsViewModel extends ChangeNotifier {
     }
   }
 
-  /// 保存 API Keys
-  Future<void> saveApiKeys(Map<String, String> keys) async {
+  /// 保存设置（API Key、API URL、默认模型）
+  Future<void> saveSettings({
+    required String apiKey,
+    required String apiUrl,
+    required String defaultModel,
+  }) async {
     try {
-      await _agentService.updateConfig(
-        'api_keys',
-        jsonEncode(keys),
-      );
-      _apiKeys = keys;
-      notifyListeners();
-    } catch (e) {
-      _error = e.toString();
-      notifyListeners();
-    }
-  }
+      await _agentService.updateConfig('api_key', jsonEncode(apiKey));
+      await _agentService.updateConfig('api_url', jsonEncode(apiUrl));
 
-  /// 保存 Agent 模型映射
-  Future<void> saveAgentModelMapping(Map<String, dynamic> mapping) async {
-    try {
+      // 更新 agent_model_mapping 中的 defaultModel
+      _agentModelMapping['defaultModel'] = defaultModel.isNotEmpty ? defaultModel : 'gpt-4.1-mini';
       await _agentService.updateConfig(
         'agent_model_mapping',
-        jsonEncode(mapping),
+        jsonEncode(_agentModelMapping),
       );
-      _agentModelMapping = mapping;
+
+      _apiKey = apiKey;
+      _apiUrl = apiUrl;
+      _defaultModel = defaultModel;
       notifyListeners();
     } catch (e) {
       _error = e.toString();

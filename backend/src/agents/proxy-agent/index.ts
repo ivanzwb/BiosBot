@@ -8,7 +8,6 @@
 import * as path from 'path';
 import { HumanMessage, SystemMessage } from '@langchain/core/messages';
 import { createChatModel } from '../../integrations/llm.factory';
-import { getConfigJSON } from '../../models/config.model';
 import logger from '../../infra/logger/logger';
 import {
   AgentInput,
@@ -21,14 +20,19 @@ import {
 import { Skill } from '../../types/skill.types';
 import { loadSkills } from '../skill-loader';
 import { runWithSkills } from '../skill-runner';
-import { createRagTool, buildRagPrompt } from '../rag-tool';
-import { hasKnowledge } from '../rag-service';
+import { resolveModelConfig, buildRagTools, runAgent, convertHistoryToMessages } from '../base-agent';
+import { getConfigJSON } from '../../models/config.model';
 import { CLASSIFY_SYSTEM_PROMPT, CLASSIFY_USER_PROMPT } from './prompts/classify.prompt';
 import { AGGREGATE_SYSTEM_PROMPT, AGGREGATE_USER_PROMPT } from './prompts/classify.prompt';
 
 // ============================================================
 // proxy-agent 自身的 Skill 加载
 // ============================================================
+
+/** 获取 proxy-agent 的目录绝对路径 */
+export function getProxyAgentDir(): string {
+  return path.resolve(__dirname);
+}
 
 let proxySkills: Skill[] = [];
 
@@ -45,43 +49,18 @@ export function getProxySkills(): Skill[] {
 }
 
 // ============================================================
-// 辅助：获取 LLM 配置（从数据库）
-// ============================================================
-
-interface AgentModelMapping {
-  defaultModel: { provider: string; model: string };
-  agents: Record<string, { enabled: boolean; model: { provider: string; model: string } }>;
-}
-
-function getAgentMapping(): AgentModelMapping | null {
-  return getConfigJSON<AgentModelMapping>('agent_model_mapping');
-}
-
-function getApiKey(provider: string): string {
-  const keys = getConfigJSON<Record<string, string>>('api_keys');
-  if (keys && keys[provider]) return keys[provider];
-  // 回退到环境变量（兼容开发阶段）
-  const envKey = process.env[`${provider.toUpperCase()}_API_KEY`];
-  return envKey || '';
-}
-
-// ============================================================
 // 意图识别
 // ============================================================
 
 async function classifyIntent(input: AgentInput): Promise<ClassifyResult> {
-  const mapping = getAgentMapping();
-  const proxyConfig = mapping?.agents['proxy-agent'];
-  const provider = proxyConfig?.model.provider || mapping?.defaultModel.provider || 'openai';
-  const model = proxyConfig?.model.model || mapping?.defaultModel.model || 'gpt-4.1-mini';
-  const apiKey = getApiKey(provider);
+  const modelCfg = resolveModelConfig('proxy-agent');
 
-  if (!apiKey) {
-    logger.warn('No API key found for provider: ' + provider + '. Returning fallback classify result.');
+  if (!modelCfg.apiKey) {
+    logger.warn('No API key configured. Returning fallback classify result.');
     return { intent: 'chat', domains: [], confidence: 0.5 };
   }
 
-  const chat = createChatModel({ provider, apiKey, model, temperature: 0 });
+  const chat = createChatModel({ apiKey: modelCfg.apiKey, baseUrl: modelCfg.baseUrl, model: modelCfg.model, temperature: 0 });
 
   // 构建可用 Agent 列表描述（优先使用注册表中的元数据）
   const registeredAgents = getRegisteredAgents();
@@ -90,8 +69,9 @@ async function classifyIntent(input: AgentInput): Promise<ClassifyResult> {
   if (registeredAgents.length > 0) {
     enabledAgents = registeredAgents
       .filter((a) => {
-        const cfg = mapping?.agents?.[a.id];
-        return cfg?.enabled !== false; // 默认启用
+        // 使用 resolveModelConfig 获取的 mapping 已内化在 base-agent 中
+        // 这里只需基于注册表做简单过滤
+        return true; // 已注册即已启用
       })
       .map((a) => {
         let desc = `- ${a.id}: ${a.description}`;
@@ -102,21 +82,22 @@ async function classifyIntent(input: AgentInput): Promise<ClassifyResult> {
         return desc;
       })
       .join('\n');
-  } else if (mapping?.agents) {
-    enabledAgents = Object.entries(mapping.agents)
-      .filter(([id, cfg]) => cfg.enabled && id !== 'proxy-agent')
-      .map(([id]) => `- ${id}`)
-      .join('\n');
   } else {
     enabledAgents = '- (暂无可用领域 Agent)';
   }
 
-  const systemPrompt = CLASSIFY_SYSTEM_PROMPT.replace('{agentList}', enabledAgents);
+  // 从 agent_model_mapping 读取可配置的代理路由 System Prompt
+  const cfgMapping = getConfigJSON<any>('agent_model_mapping');
+  const classifyCfg = cfgMapping?.agents?.['proxy-agent'] || {};
+  const classifyBase = (classifyCfg.classifyPrompt as string)?.trim() || CLASSIFY_SYSTEM_PROMPT;
+  const systemPrompt = classifyBase.replace('{agentList}', enabledAgents);
   const userPrompt = CLASSIFY_USER_PROMPT.replace('{query}', input.query);
 
   try {
+    const historyMessages = convertHistoryToMessages(input.context?.history || []);
     const response = await chat.invoke([
       new SystemMessage(systemPrompt),
+      ...historyMessages,
       new HumanMessage(userPrompt),
     ]);
 
@@ -188,42 +169,24 @@ async function invokeDomainAgent(agentId: string, input: AgentInput): Promise<Ag
 // ============================================================
 
 async function directAnswer(input: AgentInput): Promise<string> {
-  const mapping = getAgentMapping();
-  const proxyConfig = mapping?.agents['proxy-agent'];
-  const provider = proxyConfig?.model.provider || 'openai';
-  const model = proxyConfig?.model.model || 'gpt-4.1-mini';
-  const apiKey = getApiKey(provider);
-
-  if (!apiKey) {
-    return '抱歉，当前尚未配置 API Key，无法回答。请在设置中添加大模型 API Key。';
-  }
-
-  const chat = createChatModel({
-    provider,
-    apiKey,
-    model,
-    temperature: input.options?.temperature ?? 0.7,
-    maxTokens: input.options?.maxTokens,
-  });
-
-  // 构建 RAG 工具（如果 proxy-agent 有知识库）
-  const extraTools = [];
   const proxyDir = path.resolve(__dirname);
-  const hasKB = await hasKnowledge('proxy-agent', proxyDir);
-  if (hasKB) {
-    extraTools.push(createRagTool({ agentId: 'proxy-agent', dataDir: proxyDir }));
-  }
+  const defaultPrompt = '你是一个通用智能助理，尽量简洁准确地回答用户问题。如果不确定，请坦诚说明。';
 
-  const basePrompt = '你是一个通用智能助理，尽量简洁准确地回答用户问题。如果不确定，请坦诚说明。';
-  const ragHint = hasKB ? `\n\n${buildRagPrompt('proxy-agent')}` : '';
+  // 从 agent_model_mapping 读取可配置的 temperature
+  const mapping = getConfigJSON<any>('agent_model_mapping');
+  const proxyCfg = mapping?.agents?.['proxy-agent'] || {};
+  const cfgTemperature = proxyCfg.temperature != null ? Number(proxyCfg.temperature) : 0.7;
 
-  // 使用 Skill + RAG 增强的 LLM 调用
-  return runWithSkills({
-    chat,
+  return runAgent({
+    agentId: 'proxy-agent',
+    agentDir: proxyDir,
     skills: proxySkills,
-    systemPrompt: basePrompt + ragHint,
+    systemPrompt: defaultPrompt,
     userMessage: input.query,
-    extraTools,
+    defaultTemperature: cfgTemperature,
+    temperature: input.options?.temperature,
+    maxTokens: input.options?.maxTokens,
+    history: input.context?.history,
   });
 }
 
@@ -340,37 +303,36 @@ async function aggregateOutputs(
     .join('\n\n');
 
   // 获取 LLM 配置
-  const mapping = getAgentMapping();
-  const proxyConfig = mapping?.agents['proxy-agent'];
-  const provider = proxyConfig?.model.provider || mapping?.defaultModel.provider || 'openai';
-  const model = proxyConfig?.model.model || mapping?.defaultModel.model || 'gpt-4.1-mini';
-  const apiKey = getApiKey(provider);
+  const modelCfg = resolveModelConfig('proxy-agent');
 
-  if (!apiKey) {
+  if (!modelCfg.apiKey) {
     logger.warn('proxy-agent aggregate: no API key, falling back to simple join');
     return agentResults;
   }
 
   try {
-    const chat = createChatModel({ provider, apiKey, model, temperature: 0 });
+    // 聚合阶段使用较低 temperature（默认0），可通过配置覆盖
+    const agMapping = getConfigJSON<any>('agent_model_mapping');
+    const pCfg = agMapping?.agents?.['proxy-agent'] || {};
+    const aggTemp = pCfg.temperature != null ? Math.max(0, Number(pCfg.temperature) * 0.5) : 0;
+    const chat = createChatModel({ apiKey: modelCfg.apiKey, baseUrl: modelCfg.baseUrl, model: modelCfg.model, temperature: aggTemp });
     const userPrompt = AGGREGATE_USER_PROMPT
       .replace('{query}', query)
       .replace('{agentResults}', agentResults);
 
     // 使用 Skill + RAG 增强的 LLM 调用（LLM 可调用 aggregate skill 获取聚合指引）
-    const extraTools = [];
     const proxyDir = path.resolve(__dirname);
-    const hasKB = await hasKnowledge('proxy-agent', proxyDir);
-    if (hasKB) {
-      extraTools.push(createRagTool({ agentId: 'proxy-agent', dataDir: proxyDir }));
-    }
+    const rag = await buildRagTools('proxy-agent', proxyDir);
+
+    // 从 agent_model_mapping 读取可配置的内容聚合 System Prompt
+    const aggregateBase = (pCfg.aggregatePrompt as string)?.trim() || AGGREGATE_SYSTEM_PROMPT;
 
     return await runWithSkills({
       chat,
       skills: proxySkills,
-      systemPrompt: AGGREGATE_SYSTEM_PROMPT,
+      systemPrompt: aggregateBase + rag.ragHint,
       userMessage: userPrompt,
-      extraTools,
+      extraTools: rag.tools,
     });
   } catch (err) {
     logger.error('proxy-agent aggregate error, falling back to simple join', { error: err });

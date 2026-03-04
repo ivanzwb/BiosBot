@@ -18,8 +18,11 @@ import logger from '../infra/logger/logger';
 /** LanceDB 表名 */
 const TABLE_NAME = 'knowledge';
 
-/** 默认嵌入模型 */
-const DEFAULT_EMBEDDING_MODEL = 'text-embedding-ada-002';
+/** 默认嵌入模型（按 baseUrl 自动选择） */
+function pickDefaultEmbeddingModel(baseUrl?: string): string {
+  if (baseUrl && baseUrl.includes('dashscope')) return 'text-embedding-v3';
+  return 'text-embedding-ada-002';
+}
 
 /** 切片最大字符数（简单按字符切分） */
 const CHUNK_SIZE = 1000;
@@ -39,20 +42,28 @@ interface EmbeddingConfig {
 
 /**
  * 获取嵌入模型配置。
- * 优先使用 agent-specific 配置，然后回退 default 配置。
+ * 从 models 配置中读取默认模型的 apiKey / baseUrl。
  */
-function getEmbeddingConfig(agentId?: string): EmbeddingConfig {
+function getEmbeddingConfig(_agentId?: string): EmbeddingConfig {
+  const models = getConfigJSON<any[]>('models') || [];
   const mapping = getConfigJSON<any>('agent_model_mapping');
-  const keys = getConfigJSON<Record<string, string>>('api_keys');
+  const rawDefault = mapping?.defaultModel || '';
+  // 兼容旧格式: { provider, model } → 取 model 字段
+  const defaultId = rawDefault && typeof rawDefault === 'object'
+    ? (rawDefault.model || rawDefault.id || '')
+    : rawDefault;
+  const entry = models.find((m: any) => m.id === defaultId)
+    || models.find((m: any) => m.model === defaultId)
+    || models[0];
 
-  // 优先使用 agent 配置的 provider
-  const agentCfg = agentId ? mapping?.agents?.[agentId] : undefined;
-  const provider = agentCfg?.model?.provider || mapping?.defaultModel?.provider || 'openai';
-  const apiKey = keys?.[provider] || process.env[`${provider.toUpperCase()}_API_KEY`] || '';
+  const apiKey = entry?.apiKey || process.env.OPENAI_API_KEY || '';
+  const baseUrl = entry?.baseUrl || process.env.OPENAI_BASE_URL || '';
+  const embeddingModel = entry?.embeddingModel || pickDefaultEmbeddingModel(baseUrl);
 
   return {
     apiKey,
-    model: DEFAULT_EMBEDDING_MODEL,
+    model: embeddingModel,
+    ...(baseUrl ? { baseUrl } : {}),
   };
 }
 
@@ -60,9 +71,10 @@ function getEmbeddingConfig(agentId?: string): EmbeddingConfig {
  * 创建 OpenAI Embeddings 实例。
  */
 function createEmbeddingModel(cfg: EmbeddingConfig): OpenAIEmbeddings {
+  const modelName = cfg.model || pickDefaultEmbeddingModel(cfg.baseUrl);
   return new OpenAIEmbeddings({
     openAIApiKey: cfg.apiKey,
-    modelName: cfg.model || DEFAULT_EMBEDDING_MODEL,
+    modelName,
     ...(cfg.baseUrl ? { configuration: { baseURL: cfg.baseUrl } } : {}),
   });
 }
@@ -241,7 +253,7 @@ export async function searchKnowledge(
   const queryVector = await embedModel.embedQuery(query);
 
   // 向量检索
-  const raw = await table.search(queryVector).limit(topK).toArray();
+  const raw = await (table as any).search(queryVector).limit(topK).toArray();
 
   return raw.map((row: any) => ({
     text: row.text as string,
@@ -263,4 +275,102 @@ export async function hasKnowledge(agentId: string, dataDir?: string): Promise<b
   } catch {
     return false;
   }
+}
+
+// ============================================================
+// 文档列表 & 删除
+// ============================================================
+
+export interface DocumentSummary {
+  docId: string;
+  title: string;
+  chunkCount: number;
+}
+
+/**
+ * 列出某 Agent 知识库中已导入的文档摘要（按 doc_id 去重）。
+ */
+export async function listDocuments(agentId: string, dataDir?: string): Promise<DocumentSummary[]> {
+  const dbDir = getLanceDbDir(agentId, dataDir);
+  let conn: lancedb.Connection;
+  try {
+    conn = await getConnection(dbDir);
+  } catch {
+    return [];
+  }
+
+  let table: lancedb.Table;
+  try {
+    table = await conn.openTable(TABLE_NAME);
+  } catch {
+    return [];
+  }
+
+  // 全量扫描（LanceDB v0.4+ 使用 query() 进行非向量查询）
+  let rows: any[];
+  try {
+    rows = await table.query().select(['doc_id', 'title']).limit(100000).toArray();
+  } catch {
+    // fallback: 尝试旧版 API
+    try {
+      rows = await (table as any).search([]).select(['doc_id', 'title']).limit(100000).toArray();
+    } catch {
+      return [];
+    }
+  }
+  const map = new Map<string, { title: string; count: number }>();
+  for (const row of rows) {
+    const docId = row.doc_id as string;
+    const existing = map.get(docId);
+    if (existing) {
+      existing.count++;
+    } else {
+      map.set(docId, { title: row.title as string, count: 1 });
+    }
+  }
+
+  return Array.from(map.entries()).map(([docId, info]) => ({
+    docId,
+    title: info.title,
+    chunkCount: info.count,
+  }));
+}
+
+/**
+ * 删除某 Agent 知识库中指定 doc_id 的所有向量记录。
+ */
+export async function deleteDocument(agentId: string, docId: string, dataDir?: string): Promise<number> {
+  const dbDir = getLanceDbDir(agentId, dataDir);
+  let conn: lancedb.Connection;
+  try {
+    conn = await getConnection(dbDir);
+  } catch {
+    return 0;
+  }
+
+  let table: lancedb.Table;
+  try {
+    table = await conn.openTable(TABLE_NAME);
+  } catch {
+    return 0;
+  }
+
+  // 统计删除前的条数
+  let before: any[];
+  try {
+    before = await table.query().select(['doc_id']).limit(100000).toArray();
+  } catch {
+    try {
+      before = await (table as any).search([]).select(['doc_id']).limit(100000).toArray();
+    } catch {
+      before = [];
+    }
+  }
+  const countBefore = before.filter((r: any) => r.doc_id === docId).length;
+
+  // LanceDB 支持 filter delete
+  await table.delete(`doc_id = '${docId.replace(/'/g, "''")}'`);
+
+  logger.info(`rag-service: deleted ${countBefore} chunk(s) for doc "${docId}" from "${agentId}"`);
+  return countBefore;
 }

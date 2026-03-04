@@ -27,14 +27,16 @@ export interface RagToolOptions {
 export function createRagTool(options: RagToolOptions): DynamicStructuredTool {
   const { agentId, dataDir, topK = 5 } = options;
 
+  const ragSchema = z.object({
+      query: z.string().describe('用于检索知识库的自然语言查询'),
+    });
+
   return new DynamicStructuredTool({
     name: 'query_knowledge',
     description:
       '从知识库中检索与查询相关的文档片段。当你需要查找特定领域知识、历史数据或参考资料时使用此工具。' +
       '传入自然语言查询，返回最相关的文档片段。',
-    schema: z.object({
-      query: z.string().describe('用于检索知识库的自然语言查询'),
-    }),
+    schema: ragSchema as any,
     func: async ({ query }: { query: string }) => {
       logger.debug(`query_knowledge tool: agent="${agentId}", query="${query}"`);
       try {

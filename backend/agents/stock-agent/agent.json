@@ -1,0 +1,7 @@
+{
+  "id": "stock-agent",
+  "name": "股票分析 Agent",
+  "description": "面向股票/财报分析，解析和分析财报数据、计算常见财务指标（PE、PB、ROE 等）、结合 RAG 知识库给出投资相关解读和风险提示。",
+  "labels": ["财报分析", "财务指标计算", "投资解读", "风险提示"],
+  "defaultTemperature": 0.3
+}

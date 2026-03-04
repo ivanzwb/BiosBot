@@ -1,9 +1,10 @@
 /**
  * index.ts — 服务入口
  *
- * 启动流程：加载配置 → 数据库迁移 → 种子数据 → 注册 Agent → 启动 HTTP 服务
+ * 启动流程：加载配置 → 数据库迁移 → 种子数据 → 注册 Agent → 启动 HTTP + WebSocket 服务
  */
 
+import { createServer } from 'http';
 import { config } from './config';
 import logger from './infra/logger/logger';
 
@@ -17,6 +18,9 @@ import { loadProxySkills } from './agents/proxy-agent';
 
 // Express 应用
 import app from './app';
+
+// WebSocket
+import { initWebSocket } from './services/ws.service';
 
 async function bootstrap(): Promise<void> {
   logger.info('=== CloudBrain 启动中 ===');
@@ -35,10 +39,15 @@ async function bootstrap(): Promise<void> {
   // 3. 加载 proxy-agent 自身的 Skill
   loadProxySkills();
 
-  // 4. 启动 HTTP 服务
+  // 4. 创建 HTTP Server 并附加 WebSocket
+  const server = createServer(app);
+  initWebSocket(server);
+
+  // 5. 启动服务
   const port = config.port;
-  app.listen(port, () => {
+  server.listen(port, () => {
     logger.info(`Server running on http://localhost:${port}`);
+    logger.info(`WebSocket available at ws://localhost:${port}/ws`);
     logger.info(`Health check: http://localhost:${port}/api/health`);
   });
 }

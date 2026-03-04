@@ -1,0 +1,292 @@
+.page {
+  padding: 24px 32px;
+  overflow-y: auto;
+  height: 100%;
+}
+
+.toast {
+  padding: 10px 14px;
+  border-radius: var(--radius);
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  font-size: 13px;
+  margin-bottom: 16px;
+}
+
+.header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 24px;
+}
+.header h1 {
+  font-size: 22px;
+  font-weight: 700;
+}
+
+.headerActions {
+  display: flex;
+  gap: 8px;
+}
+
+.addBtn {
+  padding: 8px 16px;
+  border-radius: var(--radius);
+  background: var(--color-primary);
+  color: #fff;
+  font-size: 13px;
+  font-weight: 500;
+  transition: background 0.15s;
+}
+.addBtn:hover:not(:disabled) {
+  background: var(--color-primary-hover);
+}
+.addBtn:disabled {
+  opacity: 0.5;
+}
+
+.refreshBtn {
+  padding: 8px 16px;
+  border-radius: var(--radius);
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  color: var(--color-text-secondary);
+  font-size: 13px;
+  transition: background 0.15s;
+}
+.refreshBtn:hover:not(:disabled) {
+  background: var(--color-bg);
+}
+.refreshBtn:disabled {
+  opacity: 0.5;
+}
+
+/* --- Create form --- */
+.createForm {
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius);
+  padding: 20px;
+  margin-bottom: 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  max-width: 560px;
+}
+.createForm h3 {
+  font-size: 16px;
+  font-weight: 600;
+  margin-bottom: 4px;
+}
+
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 13px;
+}
+.field span {
+  font-weight: 500;
+  color: var(--color-text-secondary);
+}
+
+.input {
+  padding: 8px 10px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius);
+  font-size: 13px;
+  background: var(--color-surface);
+  transition: border-color 0.15s;
+  width: 100%;
+}
+.input:focus {
+  outline: none;
+  border-color: var(--color-primary);
+}
+
+.textarea {
+  width: 100%;
+  padding: 8px 10px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius);
+  font-size: 13px;
+  font-family: inherit;
+  background: var(--color-surface);
+  resize: vertical;
+  min-height: 60px;
+}
+.textarea:focus {
+  outline: none;
+  border-color: var(--color-primary);
+}
+
+.tempRow {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.tempSlider {
+  flex: 1;
+  height: 4px;
+  accent-color: var(--color-primary);
+  cursor: pointer;
+}
+.tempValue {
+  font-size: 13px;
+  font-weight: 600;
+  min-width: 28px;
+  text-align: center;
+  color: var(--color-primary);
+}
+
+.formActions {
+  display: flex;
+  gap: 8px;
+  margin-top: 4px;
+}
+.saveBtn {
+  padding: 8px 22px;
+  border-radius: var(--radius);
+  background: var(--color-primary);
+  color: #fff;
+  font-size: 13px;
+  font-weight: 500;
+  transition: background 0.15s;
+}
+.saveBtn:hover:not(:disabled) {
+  background: var(--color-primary-hover);
+}
+.saveBtn:disabled {
+  opacity: 0.5;
+}
+.cancelBtn {
+  padding: 8px 16px;
+  border-radius: var(--radius);
+  font-size: 13px;
+  color: var(--color-text-secondary);
+  background: var(--color-bg);
+  transition: background 0.15s;
+}
+.cancelBtn:hover {
+  background: var(--color-border);
+}
+
+/* --- Grid & cards --- */
+.grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+  gap: 16px;
+}
+
+.card {
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius);
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  cursor: pointer;
+  transition: border-color 0.15s, box-shadow 0.15s;
+}
+.card:hover {
+  border-color: var(--color-primary);
+  box-shadow: 0 2px 8px rgba(79, 70, 229, 0.1);
+}
+
+.cardHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.cardActions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.name {
+  font-weight: 600;
+  font-size: 15px;
+}
+
+.badge {
+  font-size: 11px;
+  padding: 2px 8px;
+  border-radius: 999px;
+}
+.enabled {
+  background: #dcfce7;
+  color: #16a34a;
+}
+.disabled {
+  background: #fee2e2;
+  color: #dc2626;
+}
+
+.deleteBtn {
+  width: 22px;
+  height: 22px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 4px;
+  font-size: 16px;
+  color: var(--color-text-secondary);
+  opacity: 0;
+  transition: opacity 0.15s, background 0.15s, color 0.15s;
+}
+.card:hover .deleteBtn {
+  opacity: 1;
+}
+.deleteBtn:hover {
+  background: #fee2e2;
+  color: #dc2626;
+}
+
+.desc {
+  font-size: 13px;
+  color: var(--color-text-secondary);
+  line-height: 1.5;
+}
+
+.labels {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.label {
+  font-size: 11px;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: #e0e7ff;
+  color: var(--color-primary);
+}
+
+.cardFooter {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-top: auto;
+  gap: 8px;
+}
+
+.model {
+  font-size: 12px;
+  color: var(--color-text-secondary);
+}
+
+.sourceBadge {
+  font-size: 10px;
+  padding: 1px 6px;
+  border-radius: 999px;
+  background: var(--color-bg);
+  border: 1px solid var(--color-border);
+  color: var(--color-text-secondary);
+}
+
+.empty {
+  color: var(--color-text-secondary);
+  font-size: 14px;
+}

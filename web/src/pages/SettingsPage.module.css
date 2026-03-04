@@ -1,0 +1,689 @@
+.page {
+  overflow-y: auto;
+  height: 100%;
+  width: 100%;
+}
+.pageInner {
+  max-width: 700px;
+  padding: 24px 32px;
+}
+.page h1 {
+  font-size: 22px;
+  font-weight: 700;
+  margin-bottom: 20px;
+}
+
+.toast {
+  padding: 10px 14px;
+  border-radius: var(--radius);
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  font-size: 13px;
+  margin-bottom: 16px;
+}
+
+.section {
+  margin-bottom: 28px;
+}
+.section h2 {
+  font-size: 16px;
+  font-weight: 600;
+  margin-bottom: 4px;
+}
+
+.sectionHeader {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 16px;
+  margin-bottom: 16px;
+}
+
+.hint {
+  font-size: 13px;
+  color: var(--color-text-secondary);
+  margin-top: 4px;
+  line-height: 1.5;
+}
+
+/* --- Add button --- */
+.addBtn {
+  padding: 8px 16px;
+  border-radius: var(--radius);
+  background: var(--color-primary);
+  color: #fff;
+  font-size: 13px;
+  font-weight: 500;
+  white-space: nowrap;
+  flex-shrink: 0;
+  transition: background 0.15s;
+}
+.addBtn:hover:not(:disabled) {
+  background: var(--color-primary-hover);
+}
+.addBtn:disabled {
+  opacity: 0.5;
+}
+
+/* --- Model list --- */
+.modelList {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.modelCard {
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius);
+  padding: 16px;
+  background: var(--color-surface);
+  transition: border-color 0.15s;
+}
+.modelCard.isDefault {
+  border-color: var(--color-primary);
+}
+
+/* --- Card header --- */
+.cardHeader {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 10px;
+}
+.cardTitle {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.modelName {
+  font-size: 15px;
+  font-weight: 600;
+}
+.defaultBadge {
+  font-size: 11px;
+  padding: 2px 8px;
+  border-radius: 4px;
+  background: var(--color-primary);
+  color: #fff;
+  font-weight: 500;
+}
+.cardActions {
+  display: flex;
+  gap: 4px;
+}
+.actionBtn {
+  width: 28px;
+  height: 28px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 4px;
+  font-size: 14px;
+  transition: background 0.15s;
+}
+.actionBtn:hover {
+  background: var(--color-bg);
+}
+.deleteAction:hover {
+  background: #fee2e2;
+}
+
+/* --- Card body (read-only view) --- */
+.cardBody {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.metaRow {
+  display: flex;
+  gap: 8px;
+  font-size: 13px;
+  line-height: 1.6;
+}
+.metaLabel {
+  color: var(--color-text-secondary);
+  min-width: 32px;
+  flex-shrink: 0;
+}
+.metaValue {
+  color: var(--color-text);
+  word-break: break-all;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+.eyeBtn {
+  width: 24px;
+  height: 24px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 13px;
+  border-radius: 4px;
+  color: var(--color-text-secondary);
+  transition: background 0.15s;
+  flex-shrink: 0;
+}
+.eyeBtn:hover {
+  background: var(--color-bg);
+}
+
+/* --- Edit form --- */
+.editForm {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 13px;
+}
+.field span {
+  font-weight: 500;
+  color: var(--color-text-secondary);
+}
+
+.input {
+  padding: 8px 10px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius);
+  font-size: 13px;
+  background: var(--color-surface);
+  transition: border-color 0.15s;
+  width: 100%;
+}
+.input:focus {
+  outline: none;
+  border-color: var(--color-primary);
+}
+
+.formActions {
+  display: flex;
+  gap: 8px;
+  margin-top: 4px;
+}
+
+.saveBtn {
+  padding: 8px 22px;
+  border-radius: var(--radius);
+  background: var(--color-primary);
+  color: #fff;
+  font-size: 13px;
+  font-weight: 500;
+  transition: background 0.15s;
+}
+.saveBtn:hover:not(:disabled) {
+  background: var(--color-primary-hover);
+}
+.saveBtn:disabled {
+  opacity: 0.5;
+}
+
+.cancelBtn {
+  padding: 8px 16px;
+  border-radius: var(--radius);
+  font-size: 13px;
+  color: var(--color-text-secondary);
+  background: var(--color-bg);
+  transition: background 0.15s;
+}
+.cancelBtn:hover {
+  background: var(--color-border);
+}
+
+/* --- Test model button & result --- */
+.testBtn {
+  padding: 8px 16px;
+  border-radius: var(--radius);
+  font-size: 13px;
+  font-weight: 500;
+  color: #fff;
+  background: #059669;
+  transition: background 0.15s;
+}
+.testBtn:hover:not(:disabled) {
+  background: #047857;
+}
+.testBtn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.testResult {
+  font-size: 12px;
+  padding: 6px 10px;
+  border-radius: var(--radius);
+  margin-top: 6px;
+  line-height: 1.5;
+  word-break: break-all;
+}
+.testOk {
+  background: #064e3b;
+  color: #6ee7b7;
+}
+.testFail {
+  background: #450a0a;
+  color: #fca5a5;
+}
+
+.testTime {
+  opacity: 0.7;
+  font-size: 11px;
+}
+
+/* --- Empty state --- */
+.emptyText {
+  font-size: 13px;
+  color: var(--color-text-secondary);
+  text-align: center;
+  padding: 32px 0;
+}
+
+/* --- Select dropdown --- */
+.select {
+  padding: 8px 10px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius);
+  font-size: 13px;
+  background: var(--color-surface);
+  transition: border-color 0.15s;
+  width: 100%;
+  cursor: pointer;
+}
+.select:focus {
+  outline: none;
+  border-color: var(--color-primary);
+}
+
+.fieldHint {
+  font-size: 12px;
+  font-weight: 400;
+  color: var(--color-text-secondary);
+}
+
+/* --- Knowledge Base (Proxy Agent) --- */
+.kbSubTitle {
+  font-size: 14px;
+  font-weight: 600;
+  margin-top: 16px;
+  margin-bottom: 8px;
+}
+
+.kbActions {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+.kbImportBtn,
+.kbClearBtn,
+.kbRefreshBtn {
+  padding: 6px 12px;
+  border-radius: var(--radius);
+  font-size: 12px;
+  font-weight: 500;
+  transition: background 0.15s;
+}
+
+.kbImportBtn {
+  background: var(--color-primary);
+  color: #fff;
+}
+.kbImportBtn:hover {
+  background: var(--color-primary-hover);
+}
+
+.kbClearBtn {
+  background: #450a0a;
+  color: #fca5a5;
+}
+.kbClearBtn:hover {
+  background: #7f1d1d;
+}
+
+.kbRefreshBtn {
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+}
+.kbRefreshBtn:hover {
+  background: var(--color-bg);
+}
+
+.kbImportForm {
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius);
+  padding: 12px;
+  margin-bottom: 12px;
+  background: var(--color-bg);
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.kbModeTabs {
+  display: flex;
+  gap: 0;
+  border-radius: var(--radius);
+  overflow: hidden;
+  border: 1px solid var(--color-border);
+  width: fit-content;
+}
+
+.kbModeTab {
+  padding: 6px 14px;
+  font-size: 12px;
+  font-weight: 500;
+  background: var(--color-surface);
+  color: var(--color-text-secondary);
+  transition: background 0.15s, color 0.15s;
+  border: none;
+}
+.kbModeTab:hover {
+  background: var(--color-bg);
+}
+.kbModeActive {
+  background: var(--color-primary) !important;
+  color: #fff !important;
+}
+
+.kbFileLabel {
+  display: block;
+  cursor: pointer;
+}
+
+.kbFileDrop {
+  display: block;
+  padding: 20px 16px;
+  border: 2px dashed var(--color-border);
+  border-radius: var(--radius);
+  text-align: center;
+  font-size: 13px;
+  color: var(--color-text-secondary);
+  transition: border-color 0.15s;
+}
+.kbFileDrop:hover {
+  border-color: var(--color-primary);
+}
+
+.kbFileInput {
+  display: none;
+}
+
+.kbTextarea {
+  width: 100%;
+  padding: 8px 10px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius);
+  font-size: 13px;
+  font-family: inherit;
+  background: var(--color-surface);
+  resize: vertical;
+  min-height: 80px;
+}
+.kbTextarea:focus {
+  outline: none;
+  border-color: var(--color-primary);
+}
+
+.kbImportActions {
+  display: flex;
+  gap: 8px;
+}
+
+.kbDocList {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.kbDocItem {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 10px;
+  border-radius: var(--radius);
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+}
+
+.kbDocInfo {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.kbDocTitle {
+  font-size: 13px;
+  font-weight: 500;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.kbDocChunks {
+  font-size: 11px;
+  color: var(--color-text-secondary);
+}
+
+.kbDocDelete {
+  width: 24px;
+  height: 24px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 4px;
+  font-size: 16px;
+  color: var(--color-text-secondary);
+  flex-shrink: 0;
+  transition: background 0.15s, color 0.15s;
+}
+.kbDocDelete:hover {
+  background: #fee2e2;
+  color: #dc2626;
+}
+
+/* ===== Skill / Tool管理 ===== */
+
+.skillItem {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 10px;
+  border-radius: var(--radius);
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+}
+
+.skillActions {
+  display: flex;
+  gap: 4px;
+  align-items: center;
+  flex-shrink: 0;
+}
+
+.skillEditBtn {
+  width: 28px;
+  height: 28px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 4px;
+  font-size: 14px;
+  transition: background 0.15s;
+}
+.skillEditBtn:hover {
+  background: var(--color-hover);
+}
+
+.toolToggleBtn {
+  width: 28px;
+  height: 28px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 14px;
+  border-radius: 4px;
+  opacity: 0.5;
+  transition: opacity 0.15s;
+}
+.toolToggleBtn:hover { opacity: 0.8; }
+.toolEnabled { opacity: 1; }
+
+.toolParamsSection {
+  margin-top: 8px;
+}
+
+.toolParamsHeader {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 4px;
+}
+
+.toolParamsLabel {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--color-text-secondary);
+}
+
+.toolParamAddBtn {
+  font-size: 12px;
+  color: var(--color-primary);
+  cursor: pointer;
+}
+.toolParamAddBtn:hover { text-decoration: underline; }
+
+.toolParamRow {
+  display: flex;
+  gap: 4px;
+  align-items: center;
+  margin-bottom: 4px;
+}
+
+.toolParamInput {
+  flex: 1;
+  min-width: 60px;
+  padding: 4px 6px;
+  border: 1px solid var(--color-border);
+  border-radius: 4px;
+  font-size: 12px;
+  background: var(--color-surface);
+}
+.toolParamInput:focus { outline: none; border-color: var(--color-primary); }
+
+.toolParamType {
+  width: 80px;
+  padding: 4px 6px;
+  border: 1px solid var(--color-border);
+  border-radius: 4px;
+  font-size: 12px;
+  background: var(--color-surface);
+}
+
+.toolParamDesc {
+  flex: 2;
+  min-width: 80px;
+  padding: 4px 6px;
+  border: 1px solid var(--color-border);
+  border-radius: 4px;
+  font-size: 12px;
+  background: var(--color-surface);
+}
+.toolParamDesc:focus { outline: none; border-color: var(--color-primary); }
+
+.toolParamReq {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  font-size: 11px;
+  white-space: nowrap;
+  color: var(--color-text-secondary);
+}
+
+.toolParamRemove {
+  font-size: 16px;
+  color: var(--color-text-secondary);
+  cursor: pointer;
+}
+.toolParamRemove:hover { color: #dc2626; }
+
+.toolHandlerSection {
+  margin-top: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.toolHandlerRow {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+}
+
+.toolHandlerUrl {
+  flex: 1;
+  padding: 4px 6px;
+  border: 1px solid var(--color-border);
+  border-radius: 4px;
+  font-size: 12px;
+  background: var(--color-surface);
+}
+
+/* ===== Proxy Agent Temperature / System Prompt ===== */
+.tempRow {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 4px;
+}
+.tempSlider {
+  flex: 1;
+  height: 4px;
+  accent-color: var(--color-primary);
+  cursor: pointer;
+}
+.tempValue {
+  font-size: 13px;
+  font-weight: 600;
+  min-width: 28px;
+  text-align: center;
+  color: var(--color-primary);
+}
+.proxyConfigActions {
+  display: flex;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+/* ===== Proxy Agent Tab Layout ===== */
+.proxyTabBar {
+  display: flex;
+  gap: 0;
+  border-bottom: 1px solid var(--color-border);
+  margin-bottom: 12px;
+}
+.proxyTabItem {
+  padding: 8px 16px;
+  font-size: 13px;
+  background: none;
+  border: none;
+  border-bottom: 2px solid transparent;
+  cursor: pointer;
+  color: var(--color-text-secondary);
+  transition: color 0.15s, border-color 0.15s;
+}
+.proxyTabItem:hover {
+  color: var(--color-text);
+}
+.proxyTabActive {
+  color: var(--color-primary);
+  border-bottom-color: var(--color-primary);
+  font-weight: 600;
+}
+.proxyTabPanel {
+  min-height: 200px;
+}

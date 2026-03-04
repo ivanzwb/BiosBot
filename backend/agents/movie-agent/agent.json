@@ -1,0 +1,7 @@
+{
+  "id": "movie-agent",
+  "name": "影视推荐/解析 Agent",
+  "description": "影视作品推荐、剧情解析、影评分析、演员/导演信息、根据心情推荐影视作品。",
+  "labels": ["影视推荐", "剧情解析", "影评分析", "演员导演信息"],
+  "defaultTemperature": 0.6
+}

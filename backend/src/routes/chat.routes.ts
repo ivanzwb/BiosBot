@@ -25,4 +25,7 @@ router.delete('/:id', ChatCtrl.deleteConversation);
 // GET  /api/conversations/:id/messages
 router.get('/:id/messages', ChatCtrl.listMessages);
 
+// POST /api/conversations/:id/generate-title
+router.post('/:id/generate-title', ChatCtrl.generateTitle);
+
 export default router;

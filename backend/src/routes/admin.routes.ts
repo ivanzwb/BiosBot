@@ -6,6 +6,9 @@ import { Router, Request, Response, NextFunction } from 'express';
 import { listConfigs, getConfig, upsertConfig } from '../models/config.model';
 import * as TaskService from '../services/task.service';
 import { UpdateConfigRequest } from '../types/api.types';
+import { createOpenAIChat } from '../integrations/openai.client';
+import { HumanMessage } from '@langchain/core/messages';
+import logger from '../infra/logger/logger';
 
 const router = Router();
 
@@ -67,6 +70,59 @@ router.get('/tasks/:id', (req: Request, res: Response, next: NextFunction) => {
       return;
     }
     res.json(task);
+  } catch (err) {
+    next(err);
+  }
+});
+
+// POST /api/admin/test-model — 测试模型连通性（结果持久化到 DB）
+router.post('/test-model', async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const { modelId, model, apiKey, baseUrl } = req.body as {
+      modelId?: string; model?: string; apiKey?: string; baseUrl?: string;
+    };
+    if (!model || !apiKey) {
+      res.status(400).json({ success: false, message: '模型名称和 API Key 不能为空' });
+      return;
+    }
+
+    let testEntry: {
+      success: boolean;
+      latency?: number;
+      reply?: string;
+      message?: string;
+      testedAt: string;
+    };
+
+    try {
+      const startTime = Date.now();
+      const llm = createOpenAIChat({ model, apiKey, baseUrl, maxTokens: 20, temperature: 0 });
+      const result = await llm.invoke([new HumanMessage('Hi, reply with "ok" only.')]);
+      const latency = Date.now() - startTime;
+      const content = typeof result.content === 'string'
+        ? result.content
+        : JSON.stringify(result.content);
+
+      logger.info('admin.test-model: success', { model, latency });
+      testEntry = { success: true, latency, reply: content.slice(0, 100), testedAt: new Date().toISOString() };
+    } catch (err: any) {
+      logger.warn('admin.test-model: failed', { error: err?.message || String(err) });
+      testEntry = { success: false, message: err?.message || String(err), testedAt: new Date().toISOString() };
+    }
+
+    // 持久化测试结果到 DB（按 modelId 存储）
+    if (modelId) {
+      try {
+        const existing = getConfig('model_test_results');
+        const map: Record<string, typeof testEntry> = existing ? JSON.parse(existing.value) : {};
+        map[modelId] = testEntry;
+        upsertConfig('model_test_results', JSON.stringify(map));
+      } catch (e) {
+        logger.warn('admin.test-model: failed to persist result', { error: e });
+      }
+    }
+
+    res.json(testEntry);
   } catch (err) {
     next(err);
   }

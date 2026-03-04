@@ -47,8 +47,8 @@ graph LR
 - 对应实现位于 `backend/src/services/router.service.ts`，只关心“调用哪个 Agent、以什么顺序”，不关心具体 Agent 内部实现细节。
 
 ### 领域智能体（Agent）
-- 每个 Agent 独立封装在 `backend/src/agents/<domain>-agent` 下，专注特定领域，暴露统一接口（HTTP 或内部调用）。
-- 每个 Agent 有自己 RAG 数据库来存储自己的知识库（LanceDb，默认位于 Agent 源码目录下的 `lancedb/` 子目录，如 `agents/stock-agent/lancedb/`）。
+- 每个配置驱动的 Domain Agent 独立封装在 `backend/agents/<domain>-agent` 下（纯配置，不含代码），代码驱动的 Agent（如 proxy-agent）保留在 `backend/src/agents/` 下。
+- 每个 Agent 有自己 RAG 数据库来存储自己的知识库（LanceDb，默认位于 Agent 目录下的 `lancedb/` 子目录，如 `agents/stock-agent/lancedb/`）。
 - 每个 Agent 可以配置自己的大模型（如不同云厂商/不同模型版本）。
 - 每个 Agent 有自己的 SKILL 集合，Skill 以 Markdown 文件定义（遵循 OpenSkill 标准），元数据预加载供路由决策，内容通过 `use_skill` 工具由 LLM 按需加载。
 - 每个 Agent 可通过 `query_knowledge` 工具查询自己的 RAG 知识库（LanceDB 向量检索），LLM 在需要时自主调用。
@@ -167,7 +167,7 @@ LOG_LEVEL=debug
 	- 支持删除文档、重新向量化等操作。
 	- 可以手动在会话窗口可以把对话结果导入到知识库，当自动把对话摘要写入知识库关闭时。
 - 设置（Settings）：
-	- 大模型与 API Key 配置（OpenAI、阿里云、百度等）， 可以让Agent使用。
+	- 大模型配置（API Key、API URL、默认模型），所有模型通过 OpenAI 兼容 API 调用。
 	- 代理设置（如使用国内代理/直连）、日志等级、主题（深色/浅色）。
 	- 数据相关设置：是否允许自动把对话摘要写入知识库等。
 - 引导与帮助（Onboarding/Help）：
@@ -204,7 +204,7 @@ LOG_LEVEL=debug
 
 ### 长期记忆与知识增强
 - LanceDb（本地）作为向量数据库，用于存储文本、文档等的 Embedding 向量，实现 RAG 能力。
-- 每个 Agent 维护自己的向量库，默认目录为 Agent 源码目录下的 `lancedb/` 子目录（如 `agents/stock-agent/lancedb/`）。若 Agent 未提供 `dataDir`（兜底场景），回退到集中目录 `database/lancedb/<agent-id>`。
+- 每个 Agent 维护自己的向量库，默认目录为 Agent 目录下的 `lancedb/` 子目录（如 `backend/agents/stock-agent/lancedb/`）。若 Agent 未提供 `dataDir`（兜底场景），回退到集中目录 `database/lancedb/<agent-id>`。
 - RAG 流程由集中式服务 `rag-service.ts` 统一管理（文档切片 → OpenAI Embeddings 向量化 → LanceDB 写入/检索），并通过 `rag-tool.ts` 将检索能力封装为 `query_knowledge` LangChain 工具，供 LLM 在 tool-calling 循环中按需调用。
 
 ### 网络与安全
@@ -287,11 +287,10 @@ interface ConfigRecord {
 - 后续可接入 Prometheus + Grafana 等监控体系，通过 `backend/src/infra/metrics` 采集指标。
 
 ### AI能力
-- 统一通过 `backend/src/integrations` 封装各云厂商大模型的 SDK：
-	- `openai.client.ts`
-	- `aliyun.client.ts`
-	- `baidu.client.ts`
-- 用户可在配置文件或管理界面中为不同 Agent 选择不同的模型供应商与模型版本。
+- 统一通过 `backend/src/integrations` 封装大模型调用：
+	- `openai.client.ts` —— 所有模型均通过 OpenAI 兼容 API 调用
+	- `llm.factory.ts` —— LLM 工厂，根据配置创建 ChatModel 实例
+- 用户只需配置统一的 API Key、API URL 和默认模型，即可对接 OpenAI 及所有兼容 OpenAI API 的大模型服务。
 - LangChain 作为统一的 LLM 抽象层，业务代码优先依赖 LangChain 的 LLM/ChatModel 接口，由 integrations 提供底层客户端实现。
 
 #### 模型与 Agent 配置示例
@@ -303,22 +302,19 @@ interface ConfigRecord {
 - 下例是存放在 `configs.value`（或专门配置表的 value 字段）中的伪 JSON 结构示例：
 	```json
 	{
-	  "defaultModel": {
-	    "provider": "openai",
-	    "model": "gpt-4.1-mini"
-	  },
+	  "defaultModel": "gpt-4.1-mini",
 	  "agents": {
 	    "proxy-agent": {
 	      "enabled": true,
-	      "model": { "provider": "openai", "model": "gpt-4.1-mini" }
+	      "model": "gpt-4.1-mini"
 	    },
 	    "stock-agent": {
 	      "enabled": true,
-	      "model": { "provider": "aliyun", "model": "qwen-long" }
+	      "model": "qwen-long"
 	    },
 	    "novel-agent": {
 	      "enabled": true,
-	      "model": { "provider": "openai", "model": "gpt-4.1" }
+	      "model": "gpt-4.1"
 	    }
 	  }
 	}
@@ -358,6 +354,7 @@ cloudbrain/
 │   │   │   └── task.service.ts       # 任务生命周期管理（创建/轮询/恢复）
 │   │   ├── agents/                   # 领域智能体（业务子模块）
 │   │   │   ├── agent-discovery.ts    # Agent 自动发现与注册（扫描目录、注入 dataDir / loadedSkills）
+│   │   │   ├── base-agent.ts          # Domain Agent 工厂（createDomainAgent，消除重复代码）
 │   │   │   ├── skill-loader.ts       # Skill 加载器（扫描 skills/*.md，解析 YAML frontmatter + 内容）
 │   │   │   ├── skill-tool.ts         # Skill → LangChain 工具（use_skill，OpenSkill 标准）
 │   │   │   ├── skill-runner.ts       # Skill + RAG 增强的 LLM 调用器（tool-calling 循环）
@@ -367,16 +364,20 @@ cloudbrain/
 │   │   │   │   ├── prompts/          # Prompt 模板（classify / aggregate）
 │   │   │   │   ├── skills/           # proxy-agent 的 Skill（aggregate.md, summarize.md）
 │   │   │   │   └── index.ts          # 中枢编排入口
-│   │   │   ├── stock-agent/          # 股票/理财 Agent
-│   │   │   │   ├── skills/           # 本 Agent 的 Skill（calculate-metrics.md, risk-analysis.md）
-│   │   │   │   └── index.ts          # 对外暴露的统一调用入口
-│   │   │   ├── teacher-agent/        # 老师 Agent
-│   │   │   │   ├── skills/           # 本 Agent 的 Skill（step-by-step.md, give-examples.md）
-│   │   │   │   └── index.ts
-│   │   │   ├── novel-agent/          # 小说/创作 Agent
-│   │   │   │   └── index.ts
-│   │   │   ├── movie-agent/          # 影视推荐/解析 Agent
-│   │   │   │   └── index.ts
+│   │   │   ├── stock-agent/          # 股票/理财 Agent（配置驱动，零代码）
+│   │   │   │   ├── agent.json        # Agent 配置（id, name, description, skills, defaultTemperature）
+│   │   │   │   ├── prompt.md         # System Prompt（定义 Agent 人设和能力范围）
+│   │   │   │   └── skills/           # 本 Agent 的 Skill（calculate-metrics.md, risk-analysis.md）
+│   │   │   ├── teacher-agent/        # 老师 Agent（配置驱动）
+│   │   │   │   ├── agent.json
+│   │   │   │   ├── prompt.md
+│   │   │   │   └── skills/
+│   │   │   ├── novel-agent/          # 小说/创作 Agent（配置驱动）
+│   │   │   │   ├── agent.json
+│   │   │   │   └── prompt.md
+│   │   │   ├── movie-agent/          # 影视推荐/解析 Agent（配置驱动）
+│   │   │   │   ├── agent.json
+│   │   │   │   └── prompt.md
 │   │   │   └── ...
 │   │   ├── models/                   # 数据模型（SQLite 表定义 & TypeScript 类型）
 │   │   │   ├── conversation.model.ts # conversations 表
@@ -390,8 +391,7 @@ cloudbrain/
 │   │   │   └── rate-limit.middleware.ts # 基础速率限制
 │   │   ├── integrations/             # 第三方/云端大模型 & 外部服务集成
 │   │   │   ├── openai.client.ts
-│   │   │   ├── aliyun.client.ts
-│   │   │   ├── baidu.client.ts
+│   │   │   ├── llm.factory.ts
 │   │   │   └── ...
 │   │   ├── infra/                    # 基础设施封装
 │   │   │   ├── db/                   # SQLite & LanceDb 封装
@@ -459,11 +459,12 @@ cloudbrain/
 - **backend/src/config**：通过 `dotenv` 加载 `.env` 环境变量，提供从 SQLite `configs` 表读取 Agent/模型配置的封装。以数据库为唯一真源；`agents.config.ts` 仅作为首次初始化的种子数据，不覆盖数据库配置。
 - **backend/src/routes + controllers**：HTTP 接口定义与入参/出参校验，不写复杂业务逻辑。每个 `xxx.routes.ts` 对应一个 `xxx.controller.ts`。
 - **backend/src/services**：承载主要业务逻辑——`intent.service`（意图识别）、`router.service`（路由调度）、`aggregation.service`（响应聚合）、`chat.service`（对话/消息 CRUD）、`task.service`（任务生命周期管理）。
-- **backend/src/agents**：每个子目录是一个领域 Agent，通过 `skills/*.md` 定义可复用技能、`index.ts` 暴露统一入口。共享组件位于 `agents/` 根目录：`skill-loader.ts`（扫描加载 Markdown Skill）、`skill-tool.ts`（将 Skill 包装为 `use_skill` LangChain 工具）、`skill-runner.ts`（LLM + tool-calling 循环引擎，同时支持 Skill 工具和 RAG `query_knowledge` 工具）、`rag-service.ts`（文档嵌入/向量检索核心逻辑）、`rag-tool.ts`（将 RAG 检索包装为 `query_knowledge` 工具）。所有 Agent 的 `index.ts` 必须 `export default` 一个符合 `DomainAgent` 接口的对象（含 `id`、`name`、`description`、`skills`、`run` 等元数据），由 `agent-discovery.ts` 在启动时自动扫描并注册到 proxy-agent，无需手动导入或注册。`agent-discovery.ts` 还会自动注入 `dataDir` 和 `loadedSkills`。
+- **backend/agents**：纯配置驱动的 Domain Agent 目录。每个子目录是一个领域 Agent，只包含 `agent.json` + `prompt.md` + 可选 `skills/*.md`，不含代码。由 `agent-discovery.ts` 启动时自动扫描加载。
+- **backend/src/agents**：Agent 共享代码和代码驱动的 Agent。共享组件：`base-agent.ts`（所有 Agent 共享的底层基础设施：模型配置解析、ChatModel 创建、RAG 工具构建、短期记忆、统一 LLM 调用流程）、`domain-agent.ts`（`createDomainAgent` 工厂 + `loadAgentConfig` 配置加载器）、`skill-loader.ts`、`skill-tool.ts`、`skill-runner.ts`、`rag-service.ts`、`rag-tool.ts`。代码驱动的 Agent（如 proxy-agent）保留在此处。`agent-discovery.ts` 在启动时自动扫描 `backend/agents/` 目录（以及 `AGENT_DIRS` 配置的目录），优先检查 `agent.json`（配置驱动），否则回退到 `index.ts`（代码驱动），自动注入 `dataDir` 和 `loadedSkills` 并注册到 proxy-agent。
 - **backend/src/models**：TypeScript 类型定义与 SQLite 表操作封装（`conversation.model.ts`、`message.model.ts`、`agent-log.model.ts`、`task.model.ts`、`config.model.ts`），每个文件导出 CRUD 函数。
 - **backend/src/infra**：对 SQLite（`better-sqlite3`）、LanceDb、Winston 日志等基础设施的封装，业务层只依赖接口不关心细节。其中 `db/migrate.ts` 负责建表和 schema 迁移。
 - **backend/src/middlewares**：放置日志、错误处理、速率限制等横切关注点。单用户场景不需要复杂鉴权，仅做基础本机保护。
-- **backend/src/integrations**：封装各 LLM 供应商 SDK（OpenAI、阿里云、百度），每个文件导出一个工厂函数返回 LangChain `BaseChatModel` 实例。
+- **backend/src/integrations**：封装 LLM 调用（统一使用 OpenAI 兼容 API），`openai.client.ts` 导出工厂函数返回 LangChain `BaseChatModel` 实例，`llm.factory.ts` 根据配置创建对应模型。
 - **frontend/lib/core**：全局配置、主题、路由等前端基础能力，其他 feature 模块共享。
 - **frontend/lib/features**：按"功能域"拆分模块（chat/agents/settings/onboarding），每个模块自包含 pages、widgets 和 viewmodels。
 - **frontend/lib/services**：封装对后端 REST API 的调用（`ApiClient` + 各业务 Service），前端其余模块不直接构造 HTTP 请求。
@@ -625,10 +626,7 @@ interface ApiError {
 		    "description": "面向股票/财报分析，具备专用 RAG 知识库，支持解读财务指标与投资风险提示",
 		    "skills": ["财报分析", "财务指标计算", "投资解读", "风险提示"],
 		    "enabled": true,
-		    "defaultModel": {
-		      "provider": "aliyun",
-		      "model": "qwen-long"
-		    }
+		    "model": "qwen-long"
 		  },
 		  {
 		    "id": "teacher-agent",
@@ -636,7 +634,7 @@ interface ApiError {
 		    "description": "根据用户提供的题目或知识点进行讲解、推导步骤、举例说明",
 		    "skills": ["题目讲解", "知识点解释", "步骤推导", "举例说明"],
 		    "enabled": true,
-		    "defaultModel": null
+		    "model": null
 		  }
 		]
 		```
@@ -709,57 +707,58 @@ RAG 和 Skill 能力由共享组件提供（位于 `agents/` 根目录），Agen
 - **RAG 工具**：`rag-service.ts` 提供嵌入/检索 → `rag-tool.ts` 将其包装为 `query_knowledge` LangChain 工具 → LLM 按需调用查询知识库
 - **统一调用器**：`skill-runner.ts` 的 `runWithSkills({ chat, skills, systemPrompt, userMessage, extraTools })` 将 Skill 工具 + RAG 工具一起绑定到 ChatModel，执行多轮 tool-calling 循环（最多 5 轮）
 
-示例：
+#### 三层 Agent 架构
+
+```
+base-agent.ts          — 公共基础设施（所有 Agent 共享）
+├── domain-agent.ts    — Domain Agent 工厂（零代码配置驱动）
+└── proxy-agent/       — 中枢代理 Agent（编排与路由）
+```
+
+**`base-agent.ts`** 提供所有 Agent 共享的底层逻辑，避免 Domain Agent 和 proxy-agent 之间的代码重复：
+
+- `resolveModelConfig(agentId)` — 解析 `agent_model_mapping` + `api_keys` 配置，返回 `{ provider, model, apiKey }`
+- `createAgentChat(agentId, options?)` — 创建 ChatModel 实例（自动读取模型配置）
+- `buildRagTools(agentId, agentDir)` — 检测知识库、创建 RAG 工具和 ragHint
+- `runAgent(options)` — 完整的 Agent 调用流程：读取模型配置 → 创建 ChatModel → 构建 RAG → runWithSkills
+
+**`domain-agent.ts`** 基于 `base-agent.ts`，提供 `createDomainAgent()` 工厂函数，将 Domain Agent 的创建简化为纯配置：
 
 ```typescript
-// backend/src/agents/stock-agent/index.ts
-import { loadSkills } from '../skill-loader';
-import { runWithSkills } from '../skill-runner';
-import { createRagTool, buildRagPrompt } from '../rag-tool';
-import { hasKnowledge } from '../rag-service';
+// 代码驱动方式（也可用 agent.json 零代码驱动）
+import { createDomainAgent } from '../domain-agent';
 
-const mySkills = loadSkills(path.resolve(__dirname));
-const AGENT_ID = 'stock-agent';
-
-async function run(input: AgentInput): Promise<AgentOutput> {
-  const chat = createChatModel({ provider, apiKey, model, temperature: 0.3 });
-
-  // 构建 RAG 工具（如果知识库存在）
-  const extraTools = [];
-  const agentDir = path.resolve(__dirname);
-  if (await hasKnowledge(AGENT_ID, agentDir)) {
-    extraTools.push(createRagTool({ agentId: AGENT_ID, dataDir: agentDir }));
-  }
-
-  // 使用 Skill + RAG 增强的 LLM 调用
-  const answer = await runWithSkills({
-    chat,
-    skills: mySkills,
-    systemPrompt: SYSTEM_PROMPT,
-    userMessage: input.query,
-    extraTools,  // query_knowledge 工具
-  });
-
-  return { answer };
-}
-
-const agent: DomainAgent = {
+export default createDomainAgent({
   id: 'stock-agent',
   name: '股票分析 Agent',
-  description: '面向股票/财报分析，具备专用 RAG 知识库，支持解读财务指标与投资风险提示',
-  skills: ['财报分析', '财务指标计算', '投资解读', '风险提示'],
-  run,
-};
-
-export default agent;
+  description: '面向股票/财报分析，解析和分析财报数据、计算常见财务指标…',
+  defaultTemperature: 0.3,
+  agentDir: __dirname,
+  systemPrompt: `你是一个专业的金融分析助手…`,
+});
 ```
+
+`createDomainAgent` 工厂（内部调用 `base-agent.ts` 的 `runAgent()`）自动处理：
+
+1. 调用 `loadSkills(agentDir)` 预加载目录下 `skills/*.md`
+2. 从 `agent_model_mapping` / `api_keys` 读取模型配置
+3. 检测知识库（`hasKnowledge`），如有则注入 `query_knowledge` RAG 工具
+4. 通过 `runWithSkills()` 执行 Skill + RAG 增强的 tool-calling 循环
+5. 统一的错误处理和日志记录
+
+如需完全自定义 `run` 逻辑（如 proxy-agent），可直接实现 `DomainAgent` 接口而不使用工厂。
 
 ### 6.4 Agent 自动发现与注册
 
-系统启动时，`agent-discovery.ts` 会扫描所有配置的目录以及内置 `agents/` 目录，加载各子目录中 `index.ts` 的 `default` 导出，校验其是否为合法的 `DomainAgent` 对象（具备 `id`、`name`、`run` 方法），然后自动注册到 proxy-agent 的内部 Registry 中。
+系统启动时，`agent-discovery.ts` 扫描所有配置的目录以及内置 `backend/agents/` 目录。对每个子目录，按优先级尝试两种发现模式：
 
-- **发现目录可配置**：通过环境变量 `AGENT_DIRS` 配置额外的 Agent 扫描目录（逗号分隔，支持绝对路径或相对于 `backend/` 的相对路径）。无论是否配置，内置 `agents/` 目录始终会被扫描。例如：`AGENT_DIRS=../custom-agents,/opt/extra-agents`。
-- **无需手动 import / 注册**：新增 Agent 只需在任一扫描目录下创建子目录并 `export default` 一个 `DomainAgent` 即可。
+1. **配置驱动**（优先）：检测到 `agent.json` → 调用 `loadAgentConfig()` 读取配置 + `prompt.md` → `createDomainAgent()` 自动创建实例
+2. **代码驱动**（回退）：加载 `index.ts` 的 `default` 导出，校验是否为合法 `DomainAgent`
+
+然后自动注入 `dataDir`、`loadedSkills` 并注册到 proxy-agent 的 Registry。
+
+- **发现目录可配置**：通过环境变量 `AGENT_DIRS` 配置额外的 Agent 扫描目录（逗号分隔，支持绝对路径或相对于 `backend/` 的相对路径）。无论是否配置，内置 `backend/agents/` 目录始终会被扫描。例如：`AGENT_DIRS=../custom-agents,/opt/extra-agents`。
+- **无需手动 import / 注册 / 写代码**：新增普通 Agent 只需在 `backend/agents/` 或任一扫描目录下创建子目录并放入 `agent.json` + `prompt.md` 即可。
 - **重复 ID 去重**：当多个目录中存在相同 `id` 的 Agent 时，先扫描到的优先注册，后续重复的会被跳过并记录警告。
 - **proxy-agent 自动获取 Agent 列表**：意图分类时，proxy-agent 从 Registry 获取所有已注册 Agent 的 `id` 与 `description`，构建 Prompt 让大模型选择最匹配的 Agent。
 - **`GET /api/agents` 自动包含元数据**：`listAgents` 控制器从运行时 Registry 获取 Agent 的 `name`、`description`、`skills` 等元数据，并与数据库中的 `agent_model_mapping` 配置（启用状态、模型分配）合并后返回。

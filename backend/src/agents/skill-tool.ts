@@ -38,14 +38,16 @@ export function createSkillTools(skills: Skill[]): DynamicStructuredTool[] {
   const skillMap = new Map(skills.map((s) => [s.id, s]));
   const validIds = skills.map((s) => s.id);
 
+  const skillSchema = z.object({
+    skill_id: z.string().describe('要加载的技能 ID'),
+  });
+
   const tool = new DynamicStructuredTool({
     name: 'use_skill',
     description:
       '加载指定技能（Skill）的详细内容。传入 skill_id 获取该技能的完整指引和知识，用于辅助回答用户问题。可用的 skill_id: ' +
       validIds.join(', '),
-    schema: z.object({
-      skill_id: z.string().describe('要加载的技能 ID'),
-    }),
+    schema: skillSchema as any,
     func: async ({ skill_id }: { skill_id: string }) => {
       const skill = skillMap.get(skill_id);
       if (!skill) {

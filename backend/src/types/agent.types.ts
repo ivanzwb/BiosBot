@@ -53,8 +53,8 @@ export interface DomainAgent {
   name: string;
   /** Agent 功能描述（会展示给 proxy-agent 用于意图分类，以及前端 UI） */
   description: string;
-  /** Agent 具备的技能标签列表，便于路由匹配和 UI 展示 */
-  skills?: string[];
+  /** Agent 标签列表，便于路由匹配和 UI 展示 */
+  labels?: string[];
   /**
    * 已加载的 Skill 列表（由 agent-discovery / skill-loader 自动扫描注入）。
    * 元数据（id, name, description）预加载供路由决策；内容作为 use_skill 工具由 LLM 按需加载。
