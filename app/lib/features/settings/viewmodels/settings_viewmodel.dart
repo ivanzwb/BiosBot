@@ -32,6 +32,10 @@ class SettingsViewModel extends ChangeNotifier {
   bool loadingTools = false;
   bool loadingDocs = false;
 
+  // 全局Tools
+  List<AgentTool> globalTools = [];
+  bool loadingGlobalTools = false;
+
   Map<String, dynamic> _agentModelMapping = {};
 
   bool _isLoading = false;
@@ -250,6 +254,88 @@ class SettingsViewModel extends ChangeNotifier {
       notifyListeners();
     } catch (e) {
       flash('保存失败: $e');
+    }
+  }
+
+  // ============ 全局Tools管理 ============
+
+  /// 加载全局Tools列表
+  Future<void> loadGlobalTools() async {
+    loadingGlobalTools = true;
+    notifyListeners();
+
+    try {
+      globalTools = await _svc.listGlobalTools();
+    } catch (_) {
+      globalTools = [];
+    }
+
+    loadingGlobalTools = false;
+    notifyListeners();
+  }
+
+  /// 创建全局Tool
+  Future<void> createGlobalTool({
+    required String id,
+    required String name,
+    required String description,
+    required Map<String, dynamic> handler,
+    List<Map<String, dynamic>>? parameters,
+  }) async {
+    try {
+      final tool = await _svc.createGlobalTool({
+        'id': id,
+        'name': name,
+        'description': description,
+        'handler': handler,
+        'parameters': parameters ?? [],
+      });
+      globalTools.add(tool);
+      notifyListeners();
+      flash('已创建');
+    } catch (e) {
+      flash('创建失败: $e');
+    }
+  }
+
+  /// 更新全局Tool
+  Future<void> updateGlobalTool(String toolId, {
+    String? name,
+    String? description,
+    Map<String, dynamic>? handler,
+    List<Map<String, dynamic>>? parameters,
+    bool? enabled,
+  }) async {
+    try {
+      final fields = <String, dynamic>{};
+      if (name != null) fields['name'] = name;
+      if (description != null) fields['description'] = description;
+      if (handler != null) fields['handler'] = handler;
+      if (parameters != null) fields['parameters'] = parameters;
+      if (enabled != null) fields['enabled'] = enabled;
+
+      await _svc.updateGlobalTool(toolId, fields);
+
+      // 更新本地列表
+      final idx = globalTools.indexWhere((t) => t.id == toolId);
+      if (idx >= 0) {
+        await loadGlobalTools();
+      }
+      flash('已更新');
+    } catch (e) {
+      flash('更新失败: $e');
+    }
+  }
+
+  /// 删除全局Tool
+  Future<void> deleteGlobalTool(String toolId) async {
+    try {
+      await _svc.deleteGlobalTool(toolId);
+      globalTools.removeWhere((t) => t.id == toolId);
+      notifyListeners();
+      flash('已删除');
+    } catch (e) {
+      flash('删除失败: $e');
     }
   }
 }

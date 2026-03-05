@@ -685,6 +685,3 @@
   border-bottom-color: var(--color-primary);
   font-weight: 600;
 }
-.proxyTabPanel {
-  min-height: 200px;
-}

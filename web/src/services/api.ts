@@ -415,3 +415,56 @@ export async function uploadToolScript(
   }
   return resp.json();
 }
+
+// ============================================================
+// 全局Tools管理
+// ============================================================
+
+export function listGlobalTools(): Promise<AgentToolConfig[]> {
+  return request('/global-tools');
+}
+
+export function createGlobalTool(
+  tool: AgentToolConfig,
+): Promise<{ success: boolean; tool: AgentToolConfig }> {
+  return request('/global-tools', {
+    method: 'POST',
+    body: JSON.stringify(tool),
+  });
+}
+
+export function updateGlobalTool(
+  toolId: string,
+  fields: Partial<AgentToolConfig>,
+): Promise<{ success: boolean; tool: AgentToolConfig }> {
+  return request(`/global-tools/${encodeURIComponent(toolId)}`, {
+    method: 'PUT',
+    body: JSON.stringify(fields),
+  });
+}
+
+export function deleteGlobalTool(toolId: string): Promise<{ success: boolean }> {
+  return request(`/global-tools/${encodeURIComponent(toolId)}`, {
+    method: 'DELETE',
+  });
+}
+
+/**
+ * 上传全局Tool脚本文件
+ */
+export async function uploadGlobalToolScript(
+  toolId: string,
+  file: File,
+): Promise<{ success: boolean; scriptFile: string; size: number; tool: AgentToolConfig }> {
+  const form = new FormData();
+  form.append('script', file);
+  const resp = await fetch(
+    `${BASE}/global-tools/${encodeURIComponent(toolId)}/script`,
+    { method: 'POST', body: form },
+  );
+  if (!resp.ok) {
+    const err = await resp.json().catch(() => ({ message: resp.statusText }));
+    throw new Error(err.message || resp.statusText);
+  }
+  return resp.json();
+}

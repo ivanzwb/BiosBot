@@ -6,7 +6,7 @@
 
 import { Router } from 'express';
 import { healthCheck } from '../controllers/health.controller';
-import { listAgents, refreshAgents, updateAgentConfig, createAgentConfig, deleteAgentConfig, listSkills, createSkill, updateSkill, deleteSkill, listTools, createTool, updateTool, deleteTool, scriptUploadMiddleware, uploadToolScript } from '../controllers/agent.controller';
+import { listAgents, refreshAgents, updateAgentConfig, createAgentConfig, deleteAgentConfig, listSkills, createSkill, updateSkill, deleteSkill, listTools, createTool, updateTool, deleteTool, scriptUploadMiddleware, uploadToolScript, listGlobalTools, createGlobalTool, updateGlobalTool, deleteGlobalTool, globalScriptUploadMiddleware, uploadGlobalToolScript } from '../controllers/agent.controller';
 import intentRoutes from './intent.routes';
 import agentRoutes from './agent.routes';
 import chatRoutes from './chat.routes';
@@ -49,6 +49,14 @@ router.put('/agents/:id/tools/:toolId', updateTool);
 router.delete('/agents/:id/tools/:toolId', deleteTool);
 // Tool Script Upload
 router.post('/agents/:id/tools/:toolId/script', scriptUploadMiddleware, uploadToolScript);
+
+// Global Tool CRUD （全局Tools，所有 Agent 可用）
+router.get('/global-tools', listGlobalTools);
+router.post('/global-tools', createGlobalTool);
+router.put('/global-tools/:toolId', updateGlobalTool);
+router.delete('/global-tools/:toolId', deleteGlobalTool);
+// Global Tool Script Upload
+router.post('/global-tools/:toolId/script', globalScriptUploadMiddleware, uploadGlobalToolScript);
 
 // 删除 Agent
 router.delete('/agents/:id', deleteAgentConfig);

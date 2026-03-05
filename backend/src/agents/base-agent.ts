@@ -21,6 +21,7 @@ import { runWithSkills } from './skill-runner';
 import { createRagTool, buildRagPrompt } from './rag-tool';
 import { hasKnowledge } from './rag-service';
 import { loadAgentTools } from './tool-loader';
+import { loadGlobalTools } from './global-tool-loader';
 
 // ============================================================
 // 模型配置解析
@@ -266,12 +267,15 @@ export async function runAgent(options: AgentRunOptions): Promise<string> {
   // 4. 加载 Agent 目录下的自定义 Tools（tools/*.json）
   const { tools: agentTools } = loadAgentTools(agentDir);
 
-  const extraTools: DynamicStructuredTool[] = [...staticExtraTools, ...rag.tools, ...agentTools];
+  // 5. 加载全局Tools（所有 Agent 共享）
+  const { tools: globalTools } = loadGlobalTools();
 
-  // 5. 转换历史消息为 LangChain 格式（短期记忆）
+  const extraTools: DynamicStructuredTool[] = [...staticExtraTools, ...rag.tools, ...agentTools, ...globalTools];
+
+  // 6. 转换历史消息为 LangChain 格式（短期记忆）
   const historyMessages = convertHistoryToMessages(history);
 
-  // 6. 调用 runWithSkills
+  // 7. 调用 runWithSkills
   return runWithSkills({
     chat,
     skills,

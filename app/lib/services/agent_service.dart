@@ -180,6 +180,32 @@ class AgentService {
   }
 
   // ============================================================
+  // 全局Tools管理
+  // ============================================================
+
+  /// 获取全局 Tools 列表
+  Future<List<AgentTool>> listGlobalTools() async {
+    final data = await _api.get('/global-tools');
+    return (data as List).map((j) => AgentTool.fromJson(j)).toList();
+  }
+
+  /// 创建全局 Tool
+  Future<AgentTool> createGlobalTool(Map<String, dynamic> tool) async {
+    final data = await _api.post('/global-tools', body: tool);
+    return AgentTool.fromJson((data as Map<String, dynamic>)['tool']);
+  }
+
+  /// 更新全局 Tool
+  Future<void> updateGlobalTool(String toolId, Map<String, dynamic> fields) async {
+    await _api.put('/global-tools/${Uri.encodeComponent(toolId)}', body: fields);
+  }
+
+  /// 删除全局 Tool
+  Future<void> deleteGlobalTool(String toolId) async {
+    await _api.delete('/global-tools/${Uri.encodeComponent(toolId)}');
+  }
+
+  // ============================================================
   // 配置管理
   // ============================================================
 

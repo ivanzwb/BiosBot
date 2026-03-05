@@ -1,0 +1,19 @@
+{
+  "id": "example-weather",
+  "name": "get_weather",
+  "description": "获取指定城市的天气信息。这是一个示例全局Tool，所有 Agent 都可以调用。",
+  "parameters": [
+    {
+      "name": "city",
+      "type": "string",
+      "description": "城市名称，如北京、上海",
+      "required": true
+    }
+  ],
+  "handler": {
+    "type": "http",
+    "url": "https://api.example.com/weather?city={{city}}",
+    "method": "GET"
+  },
+  "enabled": false
+}

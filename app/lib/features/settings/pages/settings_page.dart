@@ -20,6 +20,7 @@ class _SettingsPageState extends State<SettingsPage> {
       final vm = context.read<SettingsViewModel>();
       vm.loadConfigs();
       vm.loadProxyExtras();
+      vm.loadGlobalTools();
     });
   }
 
@@ -75,6 +76,22 @@ class _SettingsPageState extends State<SettingsPage> {
               _SectionHeader(title: 'Proxy Agent 配置'),
               const SizedBox(height: 8),
               _ProxyAgentConfig(vm: vm),
+
+              const SizedBox(height: 32),
+              const Divider(),
+              const SizedBox(height: 16),
+
+              // ==================== 全局Tools ====================
+              _SectionHeader(
+                title: '全局Tools',
+                trailing: FilledButton.icon(
+                  icon: const Icon(Icons.add, size: 18),
+                  label: const Text('添加'),
+                  onPressed: () => _showGlobalToolEditor(context, vm, null),
+                ),
+              ),
+              const SizedBox(height: 8),
+              _GlobalToolsSection(vm: vm, onEdit: (tool) => _showGlobalToolEditor(context, vm, tool)),
 
               const SizedBox(height: 32),
               const Divider(),
@@ -228,9 +245,309 @@ class _SettingsPageState extends State<SettingsPage> {
       ),
     );
   }
+
+  void _showGlobalToolEditor(
+      BuildContext context, SettingsViewModel vm, AgentTool? existing) {
+    final idCtrl = TextEditingController(text: existing?.id ?? '');
+    final nameCtrl = TextEditingController(text: existing?.name ?? '');
+    final descCtrl = TextEditingController(text: existing?.description ?? '');
+    final urlCtrl = TextEditingController(
+        text: existing?.handler['url'] as String? ?? '');
+    String method = existing?.handler['method'] as String? ?? 'GET';
+    String handlerType = existing?.handlerType ?? 'http';
+
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      useSafeArea: true,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setBottomState) => Padding(
+          padding: EdgeInsets.only(
+            bottom: MediaQuery.of(ctx).viewInsets.bottom,
+            left: 20, right: 20, top: 20,
+          ),
+          child: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  existing != null ? '编辑全局Tool' : '添加全局Tool',
+                  style: Theme.of(context).textTheme.titleMedium,
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  '全局Tools将对所有 Agent 生效',
+                  style: TextStyle(
+                    fontSize: 12,
+                    color: Theme.of(context).colorScheme.outline,
+                  ),
+                ),
+                const SizedBox(height: 16),
+                if (existing == null)
+                  TextField(
+                    controller: idCtrl,
+                    decoration: const InputDecoration(
+                      labelText: 'Tool ID *',
+                      hintText: '如 weather-api',
+                    ),
+                  ),
+                if (existing == null) const SizedBox(height: 12),
+                TextField(
+                  controller: nameCtrl,
+                  decoration: const InputDecoration(
+                    labelText: '名称 *',
+                    hintText: 'LLM 调用时使用的名称',
+                  ),
+                ),
+                const SizedBox(height: 12),
+                TextField(
+                  controller: descCtrl,
+                  maxLines: 2,
+                  decoration: const InputDecoration(
+                    labelText: '描述 *',
+                    hintText: '描述工具的功能，帮助 LLM 理解何时使用',
+                  ),
+                ),
+                const SizedBox(height: 16),
+                const Text('Handler 类型', style: TextStyle(fontSize: 12)),
+                const SizedBox(height: 4),
+                SegmentedButton<String>(
+                  segments: const [
+                    ButtonSegment(value: 'http', label: Text('HTTP')),
+                    ButtonSegment(value: 'script', label: Text('Script')),
+                  ],
+                  selected: {handlerType},
+                  onSelectionChanged: (v) =>
+                      setBottomState(() => handlerType = v.first),
+                ),
+                const SizedBox(height: 12),
+                if (handlerType == 'http') ...[
+                  Row(
+                    children: [
+                      SizedBox(
+                        width: 100,
+                        child: DropdownButtonFormField<String>(
+                          value: method,
+                          decoration:
+                              const InputDecoration(labelText: 'Method'),
+                          items: ['GET', 'POST', 'PUT', 'DELETE']
+                              .map((m) =>
+                                  DropdownMenuItem(value: m, child: Text(m)))
+                              .toList(),
+                          onChanged: (v) =>
+                              setBottomState(() => method = v ?? 'GET'),
+                        ),
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: TextField(
+                          controller: urlCtrl,
+                          decoration: const InputDecoration(
+                            labelText: 'URL *',
+                            hintText: 'https://api.example.com/{{param}}',
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ] else ...[
+                  const Text(
+                    '脚本类型工具需要先创建，然后上传脚本文件',
+                    style: TextStyle(fontSize: 12, color: Colors.grey),
+                  ),
+                ],
+                const SizedBox(height: 20),
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.end,
+                  children: [
+                    TextButton(
+                      onPressed: () => Navigator.pop(ctx),
+                      child: const Text('取消'),
+                    ),
+                    const SizedBox(width: 8),
+                    FilledButton(
+                      onPressed: () async {
+                        if (nameCtrl.text.trim().isEmpty ||
+                            descCtrl.text.trim().isEmpty) {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(content: Text('名称和描述不能为空')),
+                          );
+                          return;
+                        }
+                        if (existing == null && idCtrl.text.trim().isEmpty) {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(content: Text('Tool ID 不能为空')),
+                          );
+                          return;
+                        }
+                        if (handlerType == 'http' &&
+                            urlCtrl.text.trim().isEmpty) {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(content: Text('URL 不能为空')),
+                          );
+                          return;
+                        }
+
+                        final handler = handlerType == 'http'
+                            ? {
+                                'type': 'http',
+                                'url': urlCtrl.text.trim(),
+                                'method': method,
+                              }
+                            : {
+                                'type': 'script',
+                                'scriptFile': '',
+                                'runtime': 'node',
+                              };
+
+                        if (existing != null) {
+                          await vm.updateGlobalTool(
+                            existing.id,
+                            name: nameCtrl.text.trim(),
+                            description: descCtrl.text.trim(),
+                            handler: handler,
+                          );
+                        } else {
+                          await vm.createGlobalTool(
+                            id: idCtrl.text.trim(),
+                            name: nameCtrl.text.trim(),
+                            description: descCtrl.text.trim(),
+                            handler: handler,
+                          );
+                        }
+                        if (ctx.mounted) Navigator.pop(ctx);
+                      },
+                      child: const Text('保存'),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 20),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
 }
 
 // ===================== 组件 =====================
+
+/// 全局Tools列表组件
+class _GlobalToolsSection extends StatelessWidget {
+  final SettingsViewModel vm;
+  final void Function(AgentTool tool) onEdit;
+  const _GlobalToolsSection({required this.vm, required this.onEdit});
+
+  @override
+  Widget build(BuildContext context) {
+    if (vm.loadingGlobalTools) {
+      return const Card(
+        child: Padding(
+          padding: EdgeInsets.all(24),
+          child: Center(child: CircularProgressIndicator()),
+        ),
+      );
+    }
+
+    if (vm.globalTools.isEmpty) {
+      return const Card(
+        child: Padding(
+          padding: EdgeInsets.all(24),
+          child: Center(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(Icons.build_outlined, size: 48, color: Colors.grey),
+                SizedBox(height: 8),
+                Text('暂无全局Tools'),
+                SizedBox(height: 4),
+                Text(
+                  '全局Tools可被所有 Agent 使用',
+                  style: TextStyle(fontSize: 12, color: Colors.grey),
+                ),
+              ],
+            ),
+          ),
+        ),
+      );
+    }
+
+    return Card(
+      child: Column(
+        children: vm.globalTools.map((tool) => _GlobalToolTile(
+          tool: tool,
+          onEdit: () => onEdit(tool),
+          onDelete: () => vm.deleteGlobalTool(tool.id),
+          onToggle: () => vm.updateGlobalTool(tool.id, enabled: !tool.enabled),
+        )).toList(),
+      ),
+    );
+  }
+}
+
+/// 全局Tool条目
+class _GlobalToolTile extends StatelessWidget {
+  final AgentTool tool;
+  final VoidCallback onEdit;
+  final VoidCallback onDelete;
+  final VoidCallback onToggle;
+
+  const _GlobalToolTile({
+    required this.tool,
+    required this.onEdit,
+    required this.onDelete,
+    required this.onToggle,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return ListTile(
+      leading: Icon(
+        tool.handlerType == 'http' ? Icons.http : Icons.code,
+        color: tool.enabled ? null : Colors.grey,
+      ),
+      title: Text(
+        tool.name,
+        style: TextStyle(
+          color: tool.enabled ? null : Colors.grey,
+        ),
+      ),
+      subtitle: Text(
+        tool.description,
+        maxLines: 1,
+        overflow: TextOverflow.ellipsis,
+        style: TextStyle(
+          color: tool.enabled ? null : Colors.grey,
+        ),
+      ),
+      trailing: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Switch(
+            value: tool.enabled,
+            onChanged: (_) => onToggle(),
+          ),
+          IconButton(
+            icon: const Icon(Icons.edit, size: 18),
+            tooltip: '编辑',
+            onPressed: onEdit,
+          ),
+          IconButton(
+            icon: Icon(
+              Icons.delete_outline,
+              size: 18,
+              color: Theme.of(context).colorScheme.error,
+            ),
+            tooltip: '删除',
+            onPressed: onDelete,
+          ),
+        ],
+      ),
+    );
+  }
+}
 
 class _SectionHeader extends StatelessWidget {
   final String title;

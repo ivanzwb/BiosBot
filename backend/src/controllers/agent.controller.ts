@@ -830,3 +830,240 @@ export function uploadToolScript(req: Request, res: Response, next: NextFunction
     next(err);
   }
 }
+
+// ============================================================
+// Global Tools CRUD
+// ============================================================
+
+import { loadGlobalToolConfigs, getGlobalToolsDir } from '../agents/global-tool-loader';
+
+/**
+ * GET /api/global-tools
+ *
+ * 列出所有全局 Tool 配置。
+ */
+export function listGlobalTools(_req: Request, res: Response, next: NextFunction): void {
+  try {
+    const configs = loadGlobalToolConfigs();
+    res.json(configs);
+  } catch (err) {
+    next(err);
+  }
+}
+
+/**
+ * POST /api/global-tools
+ *
+ * 创建新的全局 Tool。
+ */
+export function createGlobalTool(req: Request, res: Response, next: NextFunction): void {
+  try {
+    const globalToolsDir = getGlobalToolsDir();
+
+    const { id, name, description, parameters, handler } = req.body;
+    if (!id || !name || !description) {
+      res.status(400).json({ code: 'INVALID_PARAMS', message: 'id, name and description are required' });
+      return;
+    }
+    if (!handler || !handler.type) {
+      res.status(400).json({ code: 'INVALID_PARAMS', message: 'handler with type is required' });
+      return;
+    }
+    if (handler.type === 'http' && !handler.url) {
+      res.status(400).json({ code: 'INVALID_PARAMS', message: 'handler.url is required for http type' });
+      return;
+    }
+    if (handler.type === 'script' && !handler.runtime) {
+      res.status(400).json({ code: 'INVALID_PARAMS', message: 'handler.runtime is required for script type' });
+      return;
+    }
+
+    if (!fs.existsSync(globalToolsDir)) {
+      fs.mkdirSync(globalToolsDir, { recursive: true });
+    }
+
+    const filePath = path.join(globalToolsDir, `${id}.json`);
+    if (fs.existsSync(filePath)) {
+      res.status(409).json({ code: 'CONFLICT', message: `Global tool "${id}" already exists` });
+      return;
+    }
+
+    const toolConfig: AgentToolConfig = {
+      id,
+      name,
+      description,
+      parameters: parameters || [],
+      handler,
+      enabled: true,
+    };
+
+    fs.writeFileSync(filePath, JSON.stringify(toolConfig, null, 2) + '\n', 'utf-8');
+
+    logger.info('agent.controller: created global tool', { toolId: id });
+    res.status(201).json({ success: true, tool: toolConfig });
+  } catch (err) {
+    next(err);
+  }
+}
+
+/**
+ * PUT /api/global-tools/:toolId
+ *
+ * 更新已有的全局 Tool 配置。
+ */
+export function updateGlobalTool(req: Request, res: Response, next: NextFunction): void {
+  try {
+    const globalToolsDir = getGlobalToolsDir();
+    const toolId = paramStr(req.params.toolId);
+    const filePath = path.join(globalToolsDir, `${toolId}.json`);
+
+    if (!fs.existsSync(filePath)) {
+      res.status(404).json({ code: 'NOT_FOUND', message: `Global tool "${toolId}" not found` });
+      return;
+    }
+
+    // 读取现有配置并合并
+    let existing: AgentToolConfig;
+    try {
+      existing = JSON.parse(fs.readFileSync(filePath, 'utf-8'));
+    } catch {
+      existing = { id: toolId, name: toolId, description: '', parameters: [], handler: { type: 'http', url: '' } };
+    }
+
+    const { name, description, parameters, handler, enabled } = req.body;
+    const merged: AgentToolConfig = {
+      ...existing,
+      ...(name !== undefined && { name }),
+      ...(description !== undefined && { description }),
+      ...(parameters !== undefined && { parameters }),
+      ...(handler !== undefined && { handler }),
+      ...(enabled !== undefined && { enabled }),
+    };
+
+    fs.writeFileSync(filePath, JSON.stringify(merged, null, 2) + '\n', 'utf-8');
+
+    logger.info('agent.controller: updated global tool', { toolId });
+    res.json({ success: true, tool: merged });
+  } catch (err) {
+    next(err);
+  }
+}
+
+/**
+ * DELETE /api/global-tools/:toolId
+ *
+ * 删除指定的全局 Tool。
+ */
+export function deleteGlobalTool(req: Request, res: Response, next: NextFunction): void {
+  try {
+    const globalToolsDir = getGlobalToolsDir();
+    const toolId = paramStr(req.params.toolId);
+    const filePath = path.join(globalToolsDir, `${toolId}.json`);
+
+    if (!fs.existsSync(filePath)) {
+      res.status(404).json({ code: 'NOT_FOUND', message: `Global tool "${toolId}" not found` });
+      return;
+    }
+
+    // 如果是 script 类型，同时删除脚本文件
+    try {
+      const cfg: AgentToolConfig = JSON.parse(fs.readFileSync(filePath, 'utf-8'));
+      if (cfg.handler?.type === 'script' && cfg.handler.scriptFile) {
+        const scriptPath = path.join(globalToolsDir, 'scripts', cfg.handler.scriptFile);
+        if (fs.existsSync(scriptPath)) {
+          fs.unlinkSync(scriptPath);
+          logger.info('agent.controller: deleted global tool script', { toolId, scriptFile: cfg.handler.scriptFile });
+        }
+      }
+    } catch { /* ignore parse errors */ }
+
+    fs.unlinkSync(filePath);
+
+    logger.info('agent.controller: deleted global tool', { toolId });
+    res.json({ success: true });
+  } catch (err) {
+    next(err);
+  }
+}
+
+// ============================================================
+// Global Tool Script Upload
+// ============================================================
+
+/** multer 中间件导出，供路由使用 */
+export const globalScriptUploadMiddleware = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 5 * 1024 * 1024 },
+}).single('script');
+
+/**
+ * POST /api/global-tools/:toolId/script
+ *
+ * 上传全局Tool脚本文件。
+ */
+export function uploadGlobalToolScript(req: Request, res: Response, next: NextFunction): void {
+  try {
+    const globalToolsDir = getGlobalToolsDir();
+    const toolId = paramStr(req.params.toolId);
+    const configPath = path.join(globalToolsDir, `${toolId}.json`);
+
+    if (!fs.existsSync(configPath)) {
+      res.status(404).json({ code: 'NOT_FOUND', message: `Global tool "${toolId}" not found` });
+      return;
+    }
+
+    if (!req.file) {
+      res.status(400).json({ code: 'INVALID_PARAMS', message: 'No script file uploaded' });
+      return;
+    }
+
+    // 确保 scripts 目录存在
+    const scriptsDir = path.join(globalToolsDir, 'scripts');
+    if (!fs.existsSync(scriptsDir)) {
+      fs.mkdirSync(scriptsDir, { recursive: true });
+    }
+
+    // 写入脚本文件
+    const scriptPath = path.join(scriptsDir, req.file.originalname);
+    fs.writeFileSync(scriptPath, req.file.buffer);
+
+    // 更新 JSON 配置中的 scriptFile
+    let cfg: AgentToolConfig;
+    try {
+      cfg = JSON.parse(fs.readFileSync(configPath, 'utf-8'));
+    } catch {
+      cfg = { id: toolId, name: toolId, description: '', parameters: [], handler: { type: 'script', scriptFile: '', runtime: 'node' } };
+    }
+
+    // 如果之前有旧脚本文件且文件名不同，删除旧文件
+    if (cfg.handler.type === 'script' && cfg.handler.scriptFile && cfg.handler.scriptFile !== req.file.originalname) {
+      const oldPath = path.join(scriptsDir, cfg.handler.scriptFile);
+      if (fs.existsSync(oldPath)) {
+        fs.unlinkSync(oldPath);
+      }
+    }
+
+    cfg.handler = {
+      ...cfg.handler,
+      type: 'script',
+      scriptFile: req.file.originalname,
+    } as any;
+
+    fs.writeFileSync(configPath, JSON.stringify(cfg, null, 2) + '\n', 'utf-8');
+
+    logger.info('agent.controller: uploaded global tool script', {
+      toolId,
+      scriptFile: req.file.originalname,
+      size: req.file.size,
+    });
+
+    res.json({
+      success: true,
+      scriptFile: req.file.originalname,
+      size: req.file.size,
+      tool: cfg,
+    });
+  } catch (err) {
+    next(err);
+  }
+}

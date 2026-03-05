@@ -74,14 +74,14 @@ export interface AgentToolConfig {
 }
 
 // ============================================================
-// 内部辅助
+// 公共辅助函数（供其他模块复用）
 // ============================================================
 
 /**
  * 将参数定义数组转换为 Zod schema。
  * 返回 z.ZodObject<any> 以避免与 DynamicStructuredTool 组合时的深度实例化问题。
  */
-function buildZodSchema(params: ToolParamDef[]): z.ZodObject<any> {
+export function buildZodSchema(params: ToolParamDef[]): z.ZodObject<any> {
   const shape: Record<string, z.ZodTypeAny> = {};
   for (const p of params) {
     let base: z.ZodTypeAny;
@@ -103,14 +103,14 @@ function buildZodSchema(params: ToolParamDef[]): z.ZodObject<any> {
 /**
  * 替换模板字符串中的 {{paramName}} 占位符。
  */
-function interpolate(template: string, params: Record<string, unknown>): string {
+export function interpolate(template: string, params: Record<string, unknown>): string {
   return template.replace(/\{\{(\w+)\}\}/g, (_, key) => String(params[key] ?? ''));
 }
 
 /**
  * 执行 HTTP 类型的 Tool handler。
  */
-async function executeHttpHandler(
+export async function executeHttpHandler(
   handler: HttpHandler,
   params: Record<string, unknown>,
 ): Promise<string> {
@@ -146,13 +146,14 @@ async function executeHttpHandler(
 /**
  * 执行 Script 类型的 Tool handler。
  * 脚本通过 stdin 接收 JSON 参数，通过 stdout 返回结果。
+ * @param scriptsDir 脚本文件所在目录的绝对路径
  */
-async function executeScriptHandler(
+export async function executeScriptHandler(
   handler: ScriptHandler,
   params: Record<string, unknown>,
-  agentDir: string,
+  scriptsDir: string,
 ): Promise<string> {
-  const scriptPath = path.join(agentDir, 'tools', 'scripts', handler.scriptFile);
+  const scriptPath = path.join(scriptsDir, handler.scriptFile);
   if (!fs.existsSync(scriptPath)) {
     return `Script file not found: ${handler.scriptFile}`;
   }
@@ -189,6 +190,44 @@ async function executeScriptHandler(
       child.stdin.write(JSON.stringify(params));
       child.stdin.end();
     }
+  });
+}
+
+/**
+ * 从配置创建 DynamicStructuredTool 实例。
+ * @param cfg Tool 配置
+ * @param scriptsDir 脚本文件目录（用于 script handler）
+ * @param descriptionPrefix 描述前缀（如"[全局]"）
+ * @param logPrefix 日志前缀
+ */
+export function createToolFromConfig(
+  cfg: AgentToolConfig,
+  scriptsDir: string,
+  descriptionPrefix: string = '',
+  logPrefix: string = 'tool-loader',
+): DynamicStructuredTool {
+  const schema = buildZodSchema(cfg.parameters || []);
+  const handler = cfg.handler;
+  const description = descriptionPrefix ? `${descriptionPrefix}${cfg.description}` : cfg.description;
+
+  return new DynamicStructuredTool({
+    name: cfg.name,
+    description,
+    schema: schema as any,
+    func: async (input: Record<string, unknown>) => {
+      try {
+        if (handler?.type === 'http') {
+          return await executeHttpHandler(handler as HttpHandler, input);
+        }
+        if (handler?.type === 'script') {
+          return await executeScriptHandler(handler as ScriptHandler, input, scriptsDir);
+        }
+        return `Unsupported handler type: ${(handler as any)?.type}`;
+      } catch (err) {
+        logger.error(`${logPrefix}: tool "${cfg.name}" execution failed`, { error: err });
+        return `Tool execution failed: ${err instanceof Error ? err.message : String(err)}`;
+      }
+    },
   });
 }
 
@@ -244,28 +283,8 @@ export function loadAgentTools(agentDir: string): {
 
       configs.push(cfg);
 
-      const schema = buildZodSchema(cfg.parameters || []);
-      const handler = cfg.handler;
-
-      const tool: DynamicStructuredTool = new DynamicStructuredTool({
-        name: cfg.name,
-        description: cfg.description,
-        schema: schema as any,
-        func: async (input: Record<string, unknown>) => {
-          try {
-            if (handler?.type === 'http') {
-              return await executeHttpHandler(handler as HttpHandler, input);
-            }
-            if (handler?.type === 'script') {
-              return await executeScriptHandler(handler as ScriptHandler, input, agentDir);
-            }
-            return `Unsupported handler type: ${(handler as any)?.type}`;
-          } catch (err) {
-            logger.error(`tool-loader: tool "${cfg.name}" execution failed`, { error: err });
-            return `Tool execution failed: ${err instanceof Error ? err.message : String(err)}`;
-          }
-        },
-      });
+      const scriptsDir = path.join(toolsDir, 'scripts');
+      const tool = createToolFromConfig(cfg, scriptsDir, '', 'tool-loader');
 
       tools.push(tool);
       logger.debug(`tool-loader: loaded tool "${cfg.id}" from "${filePath}"`);

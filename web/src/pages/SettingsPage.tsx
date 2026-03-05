@@ -70,11 +70,26 @@ export default function SettingsPage() {
   const [proxyHeadersText, setProxyHeadersText] = useState('');
   const [proxyScriptFile, setProxyScriptFile] = useState<File | null>(null);
 
+  // Global Tools state
+  const [globalTools, setGlobalTools] = useState<api.AgentToolConfig[]>([]);
+  const [globalLoadingTools, setGlobalLoadingTools] = useState(false);
+  const [globalShowToolForm, setGlobalShowToolForm] = useState(false);
+  const [globalEditingTool, setGlobalEditingTool] = useState<api.AgentToolConfig | null>(null);
+  const [globalToolDraft, setGlobalToolDraft] = useState<api.AgentToolConfig>({
+    id: '', name: '', description: '', parameters: [],
+    handler: { type: 'http', url: '', method: 'GET', headers: {}, bodyTemplate: '' },
+    enabled: true,
+  });
+  const [globalSavingTool, setGlobalSavingTool] = useState(false);
+  const [globalHeadersText, setGlobalHeadersText] = useState('');
+  const [globalScriptFile, setGlobalScriptFile] = useState<File | null>(null);
+
   useEffect(() => {
     loadData();
     loadProxyDocs();
     loadProxySkills();
     loadProxyTools();
+    loadGlobalTools();
   }, []);
 
   const loadData = async () => {
@@ -525,6 +540,119 @@ export default function SettingsPage() {
 
   const removeProxyToolParam = (idx: number) => {
     setProxyToolDraft({ ...proxyToolDraft, parameters: proxyToolDraft.parameters.filter((_, i) => i !== idx) });
+  };
+
+  /* ——— Global Tools handlers ——— */
+  const loadGlobalTools = async () => {
+    setGlobalLoadingTools(true);
+    try {
+      const list = await api.listGlobalTools();
+      setGlobalTools(list);
+    } catch { setGlobalTools([]); }
+    finally { setGlobalLoadingTools(false); }
+  };
+
+  const openGlobalToolCreate = () => {
+    setGlobalEditingTool(null);
+    setGlobalToolDraft({
+      id: '', name: '', description: '', parameters: [],
+      handler: { type: 'http', url: '', method: 'GET', headers: {}, bodyTemplate: '' },
+      enabled: true,
+    });
+    setGlobalHeadersText('');
+    setGlobalScriptFile(null);
+    setGlobalShowToolForm(true);
+  };
+
+  const openGlobalToolEdit = (tool: api.AgentToolConfig) => {
+    setGlobalEditingTool(tool);
+    setGlobalToolDraft({ ...tool });
+    setGlobalHeadersText(tool.handler.type === 'http' ? headersToText(tool.handler.headers) : '');
+    setGlobalScriptFile(null);
+    setGlobalShowToolForm(true);
+  };
+
+  const handleGlobalSaveTool = async () => {
+    if (!globalToolDraft.id.trim() || !globalToolDraft.name.trim() || !globalToolDraft.description.trim()) {
+      flash('❌ Tool ID、名称和描述不能为空');
+      return;
+    }
+    const hType = globalToolDraft.handler.type;
+    if (hType === 'http' && !(globalToolDraft.handler as api.HttpHandler).url.trim()) {
+      flash('❌ Handler URL 不能为空');
+      return;
+    }
+    if (hType === 'script' && !globalEditingTool && !globalScriptFile) {
+      flash('❌ 请选择要上传的脚本文件');
+      return;
+    }
+    setGlobalSavingTool(true);
+    try {
+      let payload: any;
+      if (hType === 'http') {
+        payload = { ...globalToolDraft, handler: { ...globalToolDraft.handler, headers: textToHeaders(globalHeadersText) } };
+      } else {
+        payload = { ...globalToolDraft };
+      }
+
+      let savedToolId = globalToolDraft.id.trim();
+      if (globalEditingTool) {
+        const { id: _, ...fields } = payload;
+        await api.updateGlobalTool(globalEditingTool.id, fields);
+        savedToolId = globalEditingTool.id;
+        flash('✅ 全局Tool已更新');
+      } else {
+        await api.createGlobalTool(payload);
+        flash('✅ 全局Tool已创建');
+      }
+
+      if (hType === 'script' && globalScriptFile) {
+        await api.uploadGlobalToolScript(savedToolId, globalScriptFile);
+        flash(globalEditingTool ? '✅ 工具已更新（脚本已上传）' : '✅ 工具已创建（脚本已上传）');
+      }
+
+      setGlobalShowToolForm(false);
+      loadGlobalTools();
+    } catch (err) {
+      flash(`❌ ${err instanceof Error ? err.message : String(err)}`);
+    } finally { setGlobalSavingTool(false); }
+  };
+
+  const handleGlobalDeleteTool = async (toolId: string) => {
+    if (!confirm('确认删除此全局Tool？')) return;
+    try {
+      await api.deleteGlobalTool(toolId);
+      setGlobalTools((prev) => prev.filter((t) => t.id !== toolId));
+      flash('✅ 已删除');
+    } catch (err) {
+      flash(`❌ ${err instanceof Error ? err.message : String(err)}`);
+    }
+  };
+
+  const handleGlobalToggleTool = async (tool: api.AgentToolConfig) => {
+    try {
+      await api.updateGlobalTool(tool.id, { enabled: !tool.enabled });
+      loadGlobalTools();
+    } catch (err) {
+      flash(`❌ ${err instanceof Error ? err.message : String(err)}`);
+    }
+  };
+
+  const addGlobalToolParam = () => {
+    setGlobalToolDraft({
+      ...globalToolDraft,
+      parameters: [...globalToolDraft.parameters, { name: '', type: 'string', description: '', required: true }],
+    });
+  };
+
+  const updateGlobalToolParam = (idx: number, field: string, value: string | boolean) => {
+    const params = [...globalToolDraft.parameters];
+    (params[idx] as any)[field] = value;
+    setGlobalToolDraft({ ...globalToolDraft, parameters: params });
+  };
+
+  const removeGlobalToolParam = (idx: number) => {
+    setGlobalToolDraft({ ...globalToolDraft, parameters: globalToolDraft.parameters.filter((_, i) => i !== idx) });
   };
 
   /* ——— Render helpers ——— */
@@ -1197,6 +1325,199 @@ export default function SettingsPage() {
         )}
 
         </div>{/* end proxyTabPanel */}
+      </section>
+
+      {/* ==================== 全局Tools ==================== */}
+      <section className={styles.section}>
+        <div className={styles.sectionHeader}>
+          <div>
+            <h2>全局Tools</h2>
+            <p className={styles.hint}>
+              全局Tools可被所有 Agent 使用。适合添加天气查询、搜索等通用能力。
+            </p>
+          </div>
+          <button className={styles.addBtn} onClick={openGlobalToolCreate}>
+            + 添加全局Tool
+          </button>
+        </div>
+
+        {globalShowToolForm && (
+          <div className={styles.kbImportForm}>
+            {!globalEditingTool && (
+              <label className={styles.field}>
+                <span>Tool ID</span>
+                <input
+                  value={globalToolDraft.id}
+                  onChange={(e) => setGlobalToolDraft({ ...globalToolDraft, id: e.target.value })}
+                  placeholder="小写字母+连字符，如 search-web"
+                  className={styles.input}
+                />
+              </label>
+            )}
+            <label className={styles.field}>
+              <span>名称（Tool Name）</span>
+              <input
+                value={globalToolDraft.name}
+                onChange={(e) => setGlobalToolDraft({ ...globalToolDraft, name: e.target.value })}
+                placeholder="LLM 调用用的名称，如 search_web"
+                className={styles.input}
+              />
+            </label>
+            <label className={styles.field}>
+              <span>描述</span>
+              <input
+                value={globalToolDraft.description}
+                onChange={(e) => setGlobalToolDraft({ ...globalToolDraft, description: e.target.value })}
+                placeholder="工具功能描述（展示给 LLM）"
+                className={styles.input}
+              />
+            </label>
+
+            {/* 参数定义 */}
+            <div className={styles.toolParamsSection}>
+              <div className={styles.toolParamsHeader}>
+                <span className={styles.toolParamsLabel}>参数</span>
+                <button className={styles.toolParamAddBtn} onClick={addGlobalToolParam} type="button">+ 添加</button>
+              </div>
+              {globalToolDraft.parameters.map((p, i) => (
+                <div key={i} className={styles.toolParamRow}>
+                  <input value={p.name} onChange={(e) => updateGlobalToolParam(i, 'name', e.target.value)} placeholder="参数名" className={styles.toolParamInput} />
+                  <select value={p.type} onChange={(e) => updateGlobalToolParam(i, 'type', e.target.value)} className={styles.toolParamType}>
+                    <option value="string">string</option>
+                    <option value="number">number</option>
+                    <option value="boolean">boolean</option>
+                  </select>
+                  <input value={p.description} onChange={(e) => updateGlobalToolParam(i, 'description', e.target.value)} placeholder="参数描述" className={styles.toolParamDesc} />
+                  <label className={styles.toolParamReq} title="必填">
+                    <input type="checkbox" checked={p.required !== false} onChange={(e) => updateGlobalToolParam(i, 'required', e.target.checked)} />
+                    必填
+                  </label>
+                  <button className={styles.toolParamRemove} onClick={() => removeGlobalToolParam(i)} title="删除">×</button>
+                </div>
+              ))}
+            </div>
+
+            {/* Handler 类型选择 */}
+            <div className={styles.toolHandlerSection}>
+              <div className={styles.toolHandlerRow}>
+                <span className={styles.toolParamsLabel}>Handler 类型</span>
+                <select
+                  value={globalToolDraft.handler.type}
+                  onChange={(e) => {
+                    const newType = e.target.value as 'http' | 'script';
+                    if (newType === 'http') {
+                      setGlobalToolDraft({ ...globalToolDraft, handler: { type: 'http', url: '', method: 'GET', headers: {}, bodyTemplate: '' } });
+                      setGlobalHeadersText('');
+                    } else {
+                      setGlobalToolDraft({ ...globalToolDraft, handler: { type: 'script', scriptFile: '', runtime: 'node' } });
+                    }
+                    setGlobalScriptFile(null);
+                  }}
+                  className={styles.toolParamType}
+                >
+                  <option value="http">HTTP 请求</option>
+                  <option value="script">脚本执行</option>
+                </select>
+              </div>
+
+              {/* HTTP Handler */}
+              {globalToolDraft.handler.type === 'http' && (() => {
+                const h = globalToolDraft.handler as api.HttpHandler;
+                return (
+                  <>
+                    <div className={styles.toolHandlerRow}>
+                      <select value={h.method || 'GET'} onChange={(e) => setGlobalToolDraft({ ...globalToolDraft, handler: { ...h, method: e.target.value } })} className={styles.toolParamType}>
+                        <option value="GET">GET</option>
+                        <option value="POST">POST</option>
+                        <option value="PUT">PUT</option>
+                        <option value="DELETE">DELETE</option>
+                        <option value="PATCH">PATCH</option>
+                      </select>
+                      <input value={h.url} onChange={(e) => setGlobalToolDraft({ ...globalToolDraft, handler: { ...h, url: e.target.value } })} placeholder="https://api.example.com/{{query}}" className={styles.toolHandlerUrl} />
+                    </div>
+                    <label className={styles.field}>
+                      <span>Headers（每行 key: value）</span>
+                      <textarea value={globalHeadersText} onChange={(e) => setGlobalHeadersText(e.target.value)} placeholder="Authorization: Bearer xxx" rows={3} className={styles.kbTextarea} />
+                    </label>
+                    {['POST', 'PUT', 'PATCH'].includes(h.method || '') && (
+                      <label className={styles.field}>
+                        <span>Body Template</span>
+                        <textarea value={h.bodyTemplate || ''} onChange={(e) => setGlobalToolDraft({ ...globalToolDraft, handler: { ...h, bodyTemplate: e.target.value } })} placeholder='{"query": "{{query}}"}' rows={3} className={styles.kbTextarea} />
+                      </label>
+                    )}
+                  </>
+                );
+              })()}
+
+              {/* Script Handler */}
+              {globalToolDraft.handler.type === 'script' && (() => {
+                const h = globalToolDraft.handler as api.ScriptHandler;
+                return (
+                  <>
+                    <div className={styles.toolHandlerRow}>
+                      <span className={styles.toolParamsLabel}>运行时</span>
+                      <select value={h.runtime || 'node'} onChange={(e) => setGlobalToolDraft({ ...globalToolDraft, handler: { ...h, runtime: e.target.value as 'node' | 'python' | 'bash' } })} className={styles.toolParamType}>
+                        <option value="node">Node.js</option>
+                        <option value="python">Python</option>
+                        <option value="bash">Bash</option>
+                      </select>
+                    </div>
+                    <label className={styles.field}>
+                      <span>超时（毫秒，默认 30000）</span>
+                      <input type="number" value={h.timeout || 30000} onChange={(e) => setGlobalToolDraft({ ...globalToolDraft, handler: { ...h, timeout: Number(e.target.value) || 30000 } })} className={styles.input} />
+                    </label>
+                    <label className={styles.field}>
+                      <span>脚本文件</span>
+                      <input type="file" accept=".js,.ts,.py,.sh,.bash,.mjs,.cjs" onChange={(e) => setGlobalScriptFile(e.target.files?.[0] || null)} className={styles.input} />
+                    </label>
+                    {h.scriptFile && <p className={styles.hint}>当前脚本: {h.scriptFile}</p>}
+                    <p className={styles.hint}>脚本通过 stdin 接收 JSON 参数，通过 stdout 返回结果。也可通过环境变量 TOOL_PARAMS 读取。</p>
+                  </>
+                );
+              })()}
+            </div>
+
+            <div className={styles.kbImportActions}>
+              <button className={styles.saveBtn} onClick={handleGlobalSaveTool} disabled={globalSavingTool}>
+                {globalSavingTool ? '保存中…' : globalEditingTool ? '更新' : '创建'}
+              </button>
+              <button className={styles.cancelBtn} onClick={() => setGlobalShowToolForm(false)}>取消</button>
+            </div>
+          </div>
+        )}
+
+        {globalLoadingTools ? (
+          <p className={styles.hint}>加载全局Tools中…</p>
+        ) : globalTools.length === 0 && !globalShowToolForm ? (
+          <p className={styles.hint}>暂无全局Tools。点击「添加全局Tool」配置新的工具。</p>
+        ) : (
+          <div className={styles.kbDocList}>
+            {globalTools.map((tool) => (
+              <div key={tool.id} className={styles.skillItem}>
+                <div className={styles.kbDocInfo}>
+                  <span className={styles.kbDocTitle}>🌐 {tool.name}</span>
+                  <span className={styles.kbDocChunks}>
+                    {tool.handler.type === 'http'
+                      ? `${(tool.handler as api.HttpHandler).method || 'GET'} ${(tool.handler as api.HttpHandler).url.slice(0, 30)}`
+                      : `📜 ${(tool.handler as api.ScriptHandler).runtime} · ${(tool.handler as api.ScriptHandler).scriptFile || '未上传'}`
+                    }
+                  </span>
+                </div>
+                <div className={styles.skillActions}>
+                  <button
+                    className={`${styles.toolToggleBtn} ${tool.enabled !== false ? styles.toolEnabled : ''}`}
+                    onClick={() => handleGlobalToggleTool(tool)}
+                    title={tool.enabled !== false ? '已启用' : '已禁用'}
+                  >
+                    {tool.enabled !== false ? '✅' : '⚪'}
+                  </button>
+                  <button className={styles.skillEditBtn} onClick={() => openGlobalToolEdit(tool)} title="编辑">✏️</button>
+                  <button className={styles.kbDocDelete} onClick={() => handleGlobalDeleteTool(tool.id)} title="删除">×</button>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
       </section>
     </div>{/* end pageInner */}
     </div>
