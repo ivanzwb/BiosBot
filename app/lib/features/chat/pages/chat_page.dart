@@ -4,6 +4,7 @@ import '../viewmodels/chat_viewmodel.dart';
 import '../widgets/conversation_list.dart';
 import '../widgets/message_bubble.dart';
 import '../widgets/chat_input.dart';
+import '../widgets/execution_steps_indicator.dart';
 
 /// 聊天主页面 — 移动端: 对话列表 ↔ 消息视图切换; 宽屏: 左右分栏
 class ChatPage extends StatefulWidget {
@@ -197,8 +198,10 @@ class _ChatPanel extends StatelessWidget {
                   },
                 ),
         ),
-        // 加载指示器
-        if (vm.isSending)
+        // 执行步骤指示器（实时显示后端执行进度）
+        if (vm.isSending && vm.executionSteps.isNotEmpty)
+          ExecutionStepsIndicator(steps: vm.executionSteps)
+        else if (vm.isSending)
           Padding(
             padding: const EdgeInsets.symmetric(vertical: 8),
             child: Row(

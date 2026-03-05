@@ -17,7 +17,7 @@ import * as TaskService from '../services/task.service';
 import { createAgentLog } from '../models/agent-log.model';
 import { ingestDocuments } from '../agents/rag-service';
 import { InvokeRequest, InvokeResponse, IngestRequest, IngestResponse } from '../types/api.types';
-import { broadcastTaskUpdate, broadcastNewMessage } from '../services/ws.service';
+import { broadcastTaskUpdate, broadcastNewMessage, broadcastExecutionStep } from '../services/ws.service';
 import logger from '../infra/logger/logger';
 
 /**
@@ -61,6 +61,10 @@ export async function invoke(req: Request, res: Response, next: NextFunction): P
               extra: body.context?.extra as Record<string, unknown>,
             },
             options: body.options,
+          },
+          // 实时推送执行步骤
+          onStep: (step) => {
+            broadcastExecutionStep(body.conversationId, task.id, step);
           },
         });
 

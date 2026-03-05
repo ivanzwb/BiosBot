@@ -48,6 +48,7 @@ export function initWebSocket(server: HttpServer): WebSocketServer {
 export function broadcast(event: WsEvent): void {
   if (!wss) return;
   const data = JSON.stringify(event);
+  logger.debug('ws.service: broadcasting event', { type: event.type, clientCount: wss.clients.size });
   wss.clients.forEach((client) => {
     if (client.readyState === WebSocket.OPEN) {
       client.send(data);
@@ -72,5 +73,40 @@ export function broadcastNewMessage(conversationId: string, message: unknown): v
   broadcast({
     type: 'message:new',
     payload: { conversationId, message },
+  });
+}
+
+/**
+ * 执行步骤类型
+ */
+export type StepType =
+  | 'classify'        // 意图识别
+  | 'route'           // 路由规划
+  | 'agent_start'     // 开始调用领域Agent
+  | 'agent_end'       // 领域Agent完成
+  | 'aggregate'       // 聚合结果
+  | 'direct_answer';  // 直接回答
+
+export interface ExecutionStep {
+  stepType: StepType;
+  agentId?: string;
+  agentName?: string;
+  description: string;
+  status: 'running' | 'completed' | 'failed';
+  detail?: unknown;
+}
+
+/**
+ * 便捷方法：广播执行步骤
+ */
+export function broadcastExecutionStep(
+  conversationId: string,
+  taskId: string,
+  step: ExecutionStep
+): void {
+  logger.debug('ws.service: broadcasting step:update', { conversationId, taskId, stepType: step.stepType, status: step.status });
+  broadcast({
+    type: 'step:update',
+    payload: { conversationId, taskId, step },
   });
 }

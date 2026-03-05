@@ -16,6 +16,8 @@ import {
   DomainAgent,
   ProxyAgentRequest,
   ProxyAgentResult,
+  StepCallback,
+  ExecutionStep,
 } from '../../types/agent.types';
 import { Skill } from '../../types/skill.types';
 import { loadSkills } from '../skill-loader';
@@ -195,7 +197,14 @@ async function directAnswer(input: AgentInput): Promise<string> {
 // ============================================================
 
 export async function runProxyAgentWorkflow(request: ProxyAgentRequest): Promise<ProxyAgentResult> {
-  const { type, payload } = request;
+  const { type, payload, onStep } = request;
+
+  // 辅助函数：安全调用步骤回调
+  const emitStep = (step: ExecutionStep) => {
+    if (onStep) {
+      try { onStep(step); } catch (e) { logger.warn('step callback error', { error: e }); }
+    }
+  };
 
   if (type === 'classify') {
     const classify = await classifyIntent(payload);
@@ -204,13 +213,17 @@ export async function runProxyAgentWorkflow(request: ProxyAgentRequest): Promise
 
   // type === 'invoke'
   // 1. 先做意图识别
+  emitStep({ stepType: 'classify', description: '正在分析意图...', status: 'running' });
   const classify = await classifyIntent(payload);
+  emitStep({ stepType: 'classify', description: '意图识别完成', status: 'completed', detail: { intent: classify.intent, domains: classify.domains } });
   logger.info('proxy-agent classify result', { classify });
 
   // 2. 根据 domains 决定路由
   if (classify.domains.length === 0) {
     // 无匹配 Agent → proxy-agent 自行回答
+    emitStep({ stepType: 'direct_answer', description: '正在由通用助手直接回答...', status: 'running' });
     const answer = await directAnswer(payload);
+    emitStep({ stepType: 'direct_answer', description: '回答生成完成', status: 'completed' });
     return { classify, answer };
   }
 
@@ -218,6 +231,7 @@ export async function runProxyAgentWorkflow(request: ProxyAgentRequest): Promise
   const steps = classify.steps || classify.domains.map((id) => [id]); // 无 steps 时默认全串行
   const agentOutputs: Array<{ agentId: string; output: AgentOutput }> = [];
 
+  emitStep({ stepType: 'route', description: `规划执行路径: ${steps.length} 个步骤`, status: 'completed', detail: { steps, plan: classify.plan } });
   logger.info('proxy-agent: executing orchestration plan', {
     steps,
     plan: classify.plan,
@@ -240,32 +254,52 @@ export async function runProxyAgentWorkflow(request: ProxyAgentRequest): Promise
     if (step.length === 1) {
       // 单个 Agent — 直接执行
       const agentId = step[0];
+      const agentMeta = agentRegistry.get(agentId);
+      const agentName = agentMeta?.name || agentId;
       logger.info(`proxy-agent: step ${stepIdx + 1}/${steps.length} — run "${agentId}"`);
+      emitStep({ stepType: 'agent_start', agentId, agentName, description: `正在调用 ${agentName}...`, status: 'running' });
       const output = await invokeDomainAgent(agentId, stepPayload);
+      emitStep({ stepType: 'agent_end', agentId, agentName, description: `${agentName} 处理完成`, status: 'completed' });
       agentOutputs.push({ agentId, output });
     } else {
       // 多 Agent — 并行执行（同一步骤内共享相同的前序上下文）
       logger.info(`proxy-agent: step ${stepIdx + 1}/${steps.length} — run [${step.join(', ')}] in parallel`);
+      // 为所有并行 Agent 发送开始通知
+      for (const agentId of step) {
+        const agentMeta = agentRegistry.get(agentId);
+        const agentName = agentMeta?.name || agentId;
+        emitStep({ stepType: 'agent_start', agentId, agentName, description: `正在调用 ${agentName}...`, status: 'running' });
+      }
       const results = await Promise.allSettled(
         step.map((agentId) => invokeDomainAgent(agentId, stepPayload))
       );
       for (let i = 0; i < step.length; i++) {
         const r = results[i];
+        const agentMeta = agentRegistry.get(step[i]);
+        const agentName = agentMeta?.name || step[i];
         if (r.status === 'fulfilled') {
           agentOutputs.push({ agentId: step[i], output: r.value });
+          emitStep({ stepType: 'agent_end', agentId: step[i], agentName, description: `${agentName} 处理完成`, status: 'completed' });
         } else {
           logger.error(`proxy-agent: agent "${step[i]}" failed in parallel step`, { error: r.reason });
           agentOutputs.push({
             agentId: step[i],
             output: { answer: `Agent "${step[i]}" 执行失败：${r.reason?.message || String(r.reason)}` },
           });
+          emitStep({ stepType: 'agent_end', agentId: step[i], agentName, description: `${agentName} 执行失败`, status: 'failed' });
         }
       }
     }
   }
 
   // 4. 由 proxy-agent 检查、汇总、格式化各 Agent 输出（不扩展、不改变内容）
+  if (agentOutputs.length > 1) {
+    emitStep({ stepType: 'aggregate', description: '正在汇总各智能体结果...', status: 'running' });
+  }
   const combinedAnswer = await aggregateOutputs(payload.query, agentOutputs);
+  if (agentOutputs.length > 1) {
+    emitStep({ stepType: 'aggregate', description: '结果汇总完成', status: 'completed' });
+  }
 
   return { classify, answer: combinedAnswer, agentOutputs };
 }

@@ -17,9 +17,10 @@ let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
 
 function getWsUrl(): string {
   const proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
-  // 开发模式下连接后端端口 3000
   const host = location.hostname;
-  const port = import.meta.env.DEV ? '3000' : location.port;
+  // 开发模式和预览模式都连接后端端口 3000
+  // 生产部署时假设前后端在同一端口（nginx 代理）
+  const port = import.meta.env.DEV || import.meta.env.MODE === 'development' ? '3000' : (location.port || '3000');
   return `${proto}//${host}:${port}/ws`;
 }
 
@@ -28,6 +29,7 @@ function connect(): void {
     return;
   }
 
+  console.log('[ws] connecting...');
   try {
     ws = new WebSocket(getWsUrl());
 
@@ -49,7 +51,6 @@ function connect(): void {
     };
 
     ws.onclose = () => {
-      console.log('[ws] disconnected, reconnecting in 3s...');
       scheduleReconnect();
     };
 
@@ -67,6 +68,13 @@ function scheduleReconnect(): void {
     reconnectTimer = null;
     connect();
   }, 3000);
+}
+
+/**
+ * 手动连接 WebSocket（可在页面加载时调用）
+ */
+export function connectWs(): void {
+  connect();
 }
 
 /**

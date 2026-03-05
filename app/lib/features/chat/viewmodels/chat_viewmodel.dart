@@ -2,6 +2,7 @@ import 'dart:async';
 import 'package:flutter/foundation.dart';
 import '../../../models/conversation.dart';
 import '../../../models/message.dart';
+import '../../../models/execution_step.dart';
 import '../../../services/chat_service.dart';
 import '../../../services/ws_service.dart';
 import '../../../core/config/app_config.dart';
@@ -11,6 +12,11 @@ import '../../../core/lifecycle/app_lifecycle_manager.dart';
 class ChatViewModel extends ChangeNotifier with LifecycleAware {
   final ChatService _chatService = ChatService();
   final WsService _ws = WsService();
+
+  ChatViewModel() {
+    // 初始化时立即建立 WebSocket 连接
+    _ws.connect();
+  }
 
   List<Conversation> _conversations = [];
   List<Conversation> get conversations => _conversations;
@@ -27,11 +33,16 @@ class ChatViewModel extends ChangeNotifier with LifecycleAware {
   bool _isSending = false;
   bool get isSending => _isSending;
 
+  /// 执行步骤列表（实时显示后端执行进度）
+  List<ExecutionStep> _executionSteps = [];
+  List<ExecutionStep> get executionSteps => _executionSteps;
+
   String? _error;
   String? get error => _error;
 
   Timer? _pollTimer;
   void Function()? _wsUnsub;
+  void Function()? _stepUnsub;
 
   /// 加载对话列表
   Future<void> loadConversations() async {
@@ -118,6 +129,33 @@ class ChatViewModel extends ChangeNotifier with LifecycleAware {
     _messages.add(tempUserMsg);
     notifyListeners();
 
+    // 清空之前的步骤，开始新任务
+    _executionSteps = [];
+    notifyListeners();
+
+    // 提前注册步骤监听（通过 conversationId 过滤，因为 taskId 还没拿到）
+    final currentConvId = _currentConversation!.id;
+    String? currentTaskId;
+    _stepUnsub?.call();
+    _stepUnsub = _ws.onEventType('step:update', (payload) {
+      if (payload is Map<String, dynamic>) {
+        final stepData = payload['step'] as Map<String, dynamic>?;
+        if (stepData != null) {
+          // 如果已经拿到 taskId，精确匹配
+          if (currentTaskId != null && payload['taskId'] == currentTaskId) {
+            final step = ExecutionStep.fromJson(stepData);
+            _updateOrAddStep(step);
+            notifyListeners();
+          } else if (currentTaskId == null && payload['conversationId'] == currentConvId) {
+            // 还没拿到 taskId，但 conversationId 匹配
+            final step = ExecutionStep.fromJson(stepData);
+            _updateOrAddStep(step);
+            notifyListeners();
+          }
+        }
+      }
+    });
+
     try {
       final result = await _chatService.sendMessage(
         conversationId: _currentConversation!.id,
@@ -126,6 +164,7 @@ class ChatViewModel extends ChangeNotifier with LifecycleAware {
 
       final taskId = result['taskId'] as String?;
       if (taskId != null) {
+        currentTaskId = taskId;
         // 同时使用 WebSocket 和轮询（race）
         _listenForTask(taskId);
         _startPolling(taskId);
@@ -135,6 +174,35 @@ class ChatViewModel extends ChangeNotifier with LifecycleAware {
       _isSending = false;
       notifyListeners();
     }
+  }
+
+  /// WebSocket 监听执行步骤（已移至 sendMessage 中提前注册）
+  @Deprecated('步骤监听已移至 sendMessage 方法中提前注册')
+  void _listenForSteps(String taskId) {
+    // 保留空实现以兼容
+  }
+
+  /// 更新或添加步骤（根据 stepType 和 agentId 匹配）
+  void _updateOrAddStep(ExecutionStep step) {
+    // 对于 Agent 相关步骤，查找同一 Agent 的步骤进行更新
+    if (step.stepType == StepType.agentStart || step.stepType == StepType.agentEnd) {
+      final idx = _executionSteps.indexWhere(
+        (s) => (s.stepType == StepType.agentStart || s.stepType == StepType.agentEnd) && s.agentId == step.agentId
+      );
+      if (idx >= 0) {
+        _executionSteps[idx] = step;
+        return;
+      }
+    } else {
+      // 对于其他步骤，查找同类型步骤进行更新
+      final idx = _executionSteps.indexWhere((s) => s.stepType == step.stepType);
+      if (idx >= 0) {
+        _executionSteps[idx] = step;
+        return;
+      }
+    }
+    // 未找到则添加
+    _executionSteps.add(step);
   }
 
   /// WebSocket 监听任务完成
@@ -147,6 +215,8 @@ class ChatViewModel extends ChangeNotifier with LifecycleAware {
         if (status == 'succeeded' || status == 'failed') {
           _wsUnsub?.call();
           _wsUnsub = null;
+          _stepUnsub?.call();
+          _stepUnsub = null;
           _pollTimer?.cancel();
           _pollTimer = null;
           _handleTaskComplete(status == 'succeeded', payload['error'] as String?);
@@ -168,6 +238,8 @@ class ChatViewModel extends ChangeNotifier with LifecycleAware {
             _pollTimer = null;
             _wsUnsub?.call();
             _wsUnsub = null;
+            _stepUnsub?.call();
+            _stepUnsub = null;
             _handleTaskComplete(task.isCompleted, task.error);
           }
         } catch (e) {
@@ -175,6 +247,8 @@ class ChatViewModel extends ChangeNotifier with LifecycleAware {
           _pollTimer = null;
           _wsUnsub?.call();
           _wsUnsub = null;
+          _stepUnsub?.call();
+          _stepUnsub = null;
           _isSending = false;
           _error = e.toString();
           notifyListeners();
@@ -332,6 +406,7 @@ class ChatViewModel extends ChangeNotifier with LifecycleAware {
   void dispose() {
     _pollTimer?.cancel();
     _wsUnsub?.call();
+    _stepUnsub?.call();
     super.dispose();
   }
 }
