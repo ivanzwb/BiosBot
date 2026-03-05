@@ -731,3 +731,23 @@ proxy-agent 作为"中枢代理"，主要负责：
 - **浏览器远程访问**：Web 端通过 HTTPS/WSS 连接 PC 后端。
 - **手机 App 远程访问**：Flutter App 通过 HTTPS/WebSocket 连接 PC 后端，支持 iOS/Android。
 - 支持个人、团队、企业多场景，易于扩展和维护。
+
+## 八、许可证
+
+本项目采用 [Apache License 2.0](LICENSE) 开源许可证。
+
+```
+Copyright 2026 DolphinBot Contributors
+
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
+```
