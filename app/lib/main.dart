@@ -14,18 +14,18 @@ void main() async {
   final lifecycle = AppLifecycleManager();
   await lifecycle.init();
 
-  runApp(CloudBrainApp(lifecycle: lifecycle));
+  runApp(DolphinBotApp(lifecycle: lifecycle));
 }
 
-class CloudBrainApp extends StatefulWidget {
+class DolphinBotApp extends StatefulWidget {
   final AppLifecycleManager lifecycle;
-  const CloudBrainApp({super.key, required this.lifecycle});
+  const DolphinBotApp({super.key, required this.lifecycle});
 
   @override
-  State<CloudBrainApp> createState() => _CloudBrainAppState();
+  State<DolphinBotApp> createState() => _DolphinBotAppState();
 }
 
-class _CloudBrainAppState extends State<CloudBrainApp> {
+class _DolphinBotAppState extends State<DolphinBotApp> {
   late final ChatViewModel _chatVm;
   late final AgentsViewModel _agentsVm;
   late final SettingsViewModel _settingsVm;
@@ -62,13 +62,13 @@ class _CloudBrainAppState extends State<CloudBrainApp> {
         ChangeNotifierProvider.value(value: _settingsVm),
       ],
       child: MaterialApp.router(
-        title: 'CloudBrain',
+        title: 'DolphinBot',
         theme: AppTheme.light,
         darkTheme: AppTheme.dark,
         themeMode: ThemeMode.system,
         routerConfig: appRouter,
         debugShowCheckedModeBanner: false,
-        restorationScopeId: 'cloudbrain_root',
+        restorationScopeId: 'dolphinbot_root',
       ),
     );
   }

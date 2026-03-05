@@ -1,7 +1,7 @@
 {
-  "name": "cloudbrain-backend",
+  "name": "dolphinbot-backend",
   "version": "0.1.0",
-  "description": "Cloudbrain 主后端服务 (Node.js/Express/LangChain)",
+  "description": "DolphinBot 主后端服务 (Node.js/Express/LangChain)",
   "main": "dist/index.js",
   "scripts": {
     "dev": "npx ts-node src/index.ts",

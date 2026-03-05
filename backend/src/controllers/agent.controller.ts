@@ -307,21 +307,41 @@ export function createAgentConfig(req: Request, res: Response, next: NextFunctio
 /**
  * DELETE /api/agents/:id
  *
- * 删除 DB 中的 Domain Agent。文件系统 Agent 不允许通过 API 删除。
+ * 删除 Agent（DB Agent 删配置，文件系统 Agent 删目录）。
  */
 export function deleteAgentConfig(req: Request, res: Response, next: NextFunction): void {
   try {
     const agentId = req.params.id as string;
+    let deleted = false;
+
+    // 1. 尝试从 DB 删除
     const domainAgents = getConfigJSON<DbAgentConfig[]>('domain_agents') || [];
     const idx = domainAgents.findIndex(a => a.id === agentId);
-
-    if (idx < 0) {
-      res.status(404).json({ code: 'NOT_FOUND', message: `DB Agent "${agentId}" not found. File-based agents cannot be deleted via API.` });
-      return;
+    if (idx >= 0) {
+      domainAgents.splice(idx, 1);
+      upsertConfig('domain_agents', JSON.stringify(domainAgents));
+      deleted = true;
     }
 
-    domainAgents.splice(idx, 1);
-    upsertConfig('domain_agents', JSON.stringify(domainAgents));
+    // 2. 尝试从文件系统删除（内置 agent 目录）
+    if (!deleted) {
+      const registeredAgent = getRegisteredAgents().find(a => a.id === agentId);
+      if (!registeredAgent) {
+        res.status(404).json({ code: 'NOT_FOUND', message: `Agent "${agentId}" not found` });
+        return;
+      }
+      if (registeredAgent.dataDir && fs.existsSync(registeredAgent.dataDir)) {
+        fs.rmSync(registeredAgent.dataDir, { recursive: true, force: true });
+        deleted = true;
+      }
+    }
+
+    // 同时清理 agent_model_mapping 中的配置
+    const mapping = getConfigJSON<any>('agent_model_mapping') || {};
+    if (mapping.agents?.[agentId]) {
+      delete mapping.agents[agentId];
+      upsertConfig('agent_model_mapping', JSON.stringify(mapping));
+    }
 
     // 热刷新
     discoverAndRegisterAgents(true);

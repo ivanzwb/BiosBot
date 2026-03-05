@@ -138,17 +138,6 @@ class _AgentsPageState extends State<AgentsPage> {
                 tooltip: '添加 Agent',
                 onPressed: _showCreateDialog,
               ),
-              IconButton(
-                icon: vm.isRefreshing
-                    ? const SizedBox(
-                        width: 20,
-                        height: 20,
-                        child: CircularProgressIndicator(strokeWidth: 2),
-                      )
-                    : const Icon(Icons.refresh),
-                tooltip: '刷新',
-                onPressed: vm.isRefreshing ? null : () => vm.refreshAgents(),
-              ),
             ],
           ),
           body: _buildBody(context, vm),
@@ -264,8 +253,7 @@ class _AgentsPageState extends State<AgentsPage> {
                           ),
                         ),
                       ),
-                      if (agent.source == 'db')
-                        IconButton(
+                      IconButton(
                           icon: Icon(Icons.delete_outline,
                               size: 20,
                               color: Theme.of(context).colorScheme.error),

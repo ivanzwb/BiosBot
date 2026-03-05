@@ -87,7 +87,7 @@ class _SettingsPageState extends State<SettingsPage> {
                     ListTile(
                       leading: const Icon(Icons.info_outline),
                       title: const Text('关于'),
-                      subtitle: const Text('CloudBrain v1.0.0'),
+                      subtitle: const Text('DolphinBot v1.0.0'),
                     ),
                   ],
                 ),

@@ -14,7 +14,6 @@ const emptyDraft = () => ({
 
 export default function AgentsPage() {
   const [agents, setAgents] = useState<api.AgentInfo[]>([]);
-  const [refreshing, setRefreshing] = useState(false);
   const [selectedAgent, setSelectedAgent] = useState<api.AgentInfo | null>(null);
   const [showCreate, setShowCreate] = useState(false);
   const [draft, setDraft] = useState(emptyDraft());
@@ -30,18 +29,6 @@ export default function AgentsPage() {
   const flash = (msg: string) => {
     setToast(msg);
     setTimeout(() => setToast(''), 3000);
-  };
-
-  const handleRefresh = async () => {
-    setRefreshing(true);
-    try {
-      await api.refreshAgents();
-      load();
-    } catch (err) {
-      console.error(err);
-    } finally {
-      setRefreshing(false);
-    }
   };
 
   const handleCreate = async () => {
@@ -99,9 +86,6 @@ export default function AgentsPage() {
         <div className={styles.headerActions}>
           <button className={styles.addBtn} onClick={() => setShowCreate(true)} disabled={showCreate}>
             + 添加 Agent
-          </button>
-          <button className={styles.refreshBtn} onClick={handleRefresh} disabled={refreshing}>
-            {refreshing ? '刷新中…' : '🔄 刷新'}
           </button>
         </div>
       </div>
@@ -197,15 +181,13 @@ export default function AgentsPage() {
                 <span className={`${styles.badge} ${agent.enabled ? styles.enabled : styles.disabled}`}>
                   {agent.enabled ? '已启用' : '已禁用'}
                 </span>
-                {agent.source === 'db' && (
-                  <button
+                <button
                     className={styles.deleteBtn}
                     onClick={(e) => handleDelete(e, agent.id)}
                     title="删除"
                   >
                     ×
                   </button>
-                )}
               </div>
             </div>
             <p className={styles.desc}>{agent.description}</p>

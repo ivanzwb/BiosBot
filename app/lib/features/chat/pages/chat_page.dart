@@ -94,7 +94,7 @@ class _ConversationPanel extends StatelessWidget {
         // 标题 + 新建对话按钮
         AppBar(
           automaticallyImplyLeading: false,
-          title: const Text('CloudBrain'),
+          title: const Text('DolphinBot'),
           actions: [
             IconButton(
               icon: const Icon(Icons.add),
@@ -243,7 +243,7 @@ class _EmptyState extends StatelessWidget {
                     color: Theme.of(context).colorScheme.primary),
                 const SizedBox(height: 16),
                 Text(
-                  '🧠 CloudBrain',
+                  '🐬 DolphinBot',
                   style: Theme.of(context).textTheme.headlineSmall,
                 ),
                 const SizedBox(height: 8),

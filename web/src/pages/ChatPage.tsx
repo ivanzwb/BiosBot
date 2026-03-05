@@ -125,7 +125,7 @@ export default function ChatPage() {
     return (
       <div className={styles.container}>
         <div className={styles.empty}>
-          <h2>🧠 CloudBrain</h2>
+          <h2>🐬 DolphinBot</h2>
           <p>你的多智能体助手。输入问题开始对话。</p>
         </div>
         <ChatInput onSend={handleSend} disabled={loading} />

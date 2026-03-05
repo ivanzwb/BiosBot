@@ -21,7 +21,7 @@ class _OnboardingPageState extends State<OnboardingPage> {
     _OnboardingStep(
       icon: Icons.smart_toy,
       title: '了解 Agent',
-      description: 'CloudBrain 内置多个领域 Agent（股票分析、题目讲解、小说创作、影视推荐等），你可以在 Agent 管理页面查看和配置。',
+      description: 'DolphinBot 内置多个领域 Agent（股票分析、题目讲解、小说创作、影视推荐等），你可以在 Agent 管理页面查看和配置。',
     ),
     _OnboardingStep(
       icon: Icons.chat,

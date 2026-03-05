@@ -1,4 +1,4 @@
-# CloudBrain — 多智能体平台
+# DolphinBot — 多智能体平台
 
 > 本文档描述了多智能体系统的整体架构、技术选型与项目结构，适用于本地和远程多端部署场景。
 
@@ -116,7 +116,7 @@ graph LR
 
 ```env
 # === 数据库 ===
-SQLITE_DB_PATH=../database/cloudbrain.db
+SQLITE_DB_PATH=../database/dolphinbot.db
 
 # === 服务 ===
 PORT=3000
@@ -352,7 +352,7 @@ interface ConfigRecord {
 ## 四、项目结构
 
 ```text
-cloudbrain/
+dolphinbot/
 ├── backend/                           # Node.js 主后端服务（Express + TypeScript）
 │   ├── src/
 │   │   ├── index.ts                  # 服务器启动入口（HTTP + WebSocket）
@@ -456,7 +456,7 @@ cloudbrain/
 │   ├── vite.config.ts
 │   ├── tsconfig.json
 │   └── package.json
-├── frontend/                         # Flutter 前端（桌面/Web/移动端）
+├── app/                              # Flutter 前端（桌面/Web/移动端）
 │   ├── lib/
 │   │   ├── main.dart                 # 入口（生命周期管理初始化、Provider 注册）
 │   │   ├── core/
@@ -504,7 +504,7 @@ cloudbrain/
 ├── docs/                             # 项目文档
 ├── deploy/                           # Docker、CI/CD 配置
 ├── database/                         # 数据库文件
-│   └── cloudbrain.db                 # SQLite 数据库
+│   └── dolphinbot.db                 # SQLite 数据库
 └── README.md
 ```
 
@@ -535,7 +535,7 @@ cloudbrain/
 - **web/src/services**：`api.ts` 封装所有 REST API 调用，`ws.ts` 封装 WebSocket 连接与事件分发。
 - **web/src/styles**：`global.css` 定义 CSS 变量和全局样式。
 
-### Flutter App（frontend/）
+### Flutter App（app/）
 
 - **`main.dart`**：`WidgetsFlutterBinding.ensureInitialized()` → 初始化 `AppLifecycleManager`（注册 `WidgetsBindingObserver`、连接 WebSocket、恢复持久化状态）→ 创建 ViewModel 实例并注册到生命周期管理器 → `MultiProvider` 注入 → `MaterialApp.router`。
 - **`core/lifecycle/app_lifecycle_manager.dart`**：核心生命周期管理器。

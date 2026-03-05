@@ -46,7 +46,7 @@ export default function Sidebar() {
 
   return (
     <aside className={styles.sidebar}>
-      <div className={styles.logo}>🧠 CloudBrain</div>
+      <div className={styles.logo}>🐬 DolphinBot</div>
 
       <button className={styles.newChat} onClick={handleNew}>
         + 新对话

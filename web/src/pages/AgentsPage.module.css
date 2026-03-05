@@ -45,22 +45,6 @@
   opacity: 0.5;
 }
 
-.refreshBtn {
-  padding: 8px 16px;
-  border-radius: var(--radius);
-  background: var(--color-surface);
-  border: 1px solid var(--color-border);
-  color: var(--color-text-secondary);
-  font-size: 13px;
-  transition: background 0.15s;
-}
-.refreshBtn:hover:not(:disabled) {
-  background: var(--color-bg);
-}
-.refreshBtn:disabled {
-  opacity: 0.5;
-}
-
 /* --- Create form --- */
 .createForm {
   background: var(--color-surface);
