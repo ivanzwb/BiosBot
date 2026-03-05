@@ -3,11 +3,14 @@ import 'package:flutter/foundation.dart';
 import '../../../models/conversation.dart';
 import '../../../models/message.dart';
 import '../../../services/chat_service.dart';
+import '../../../services/ws_service.dart';
 import '../../../core/config/app_config.dart';
+import '../../../core/lifecycle/app_lifecycle_manager.dart';
 
 /// 聊天页面状态管理
-class ChatViewModel extends ChangeNotifier {
+class ChatViewModel extends ChangeNotifier with LifecycleAware {
   final ChatService _chatService = ChatService();
+  final WsService _ws = WsService();
 
   List<Conversation> _conversations = [];
   List<Conversation> get conversations => _conversations;
@@ -28,6 +31,7 @@ class ChatViewModel extends ChangeNotifier {
   String? get error => _error;
 
   Timer? _pollTimer;
+  void Function()? _wsUnsub;
 
   /// 加载对话列表
   Future<void> loadConversations() async {
@@ -37,6 +41,7 @@ class ChatViewModel extends ChangeNotifier {
 
     try {
       _conversations = await _chatService.getConversations();
+      _tryRestorePending();
     } catch (e) {
       _error = e.toString();
     } finally {
@@ -77,13 +82,30 @@ class ChatViewModel extends ChangeNotifier {
     }
   }
 
-  /// 发送消息
+  /// 发送消息 — 支持自动创建对话
   Future<void> sendMessage(String query) async {
-    if (_currentConversation == null || query.trim().isEmpty) return;
+    if (query.trim().isEmpty) return;
 
     _isSending = true;
     _error = null;
     notifyListeners();
+
+    // 如果没有当前对话，先创建
+    if (_currentConversation == null) {
+      try {
+        final conv = await _chatService.createConversation(
+          title: query.length > 30 ? query.substring(0, 30) : query,
+        );
+        _conversations.insert(0, conv);
+        _currentConversation = conv;
+        notifyListeners();
+      } catch (e) {
+        _error = e.toString();
+        _isSending = false;
+        notifyListeners();
+        return;
+      }
+    }
 
     // 乐观更新：先显示用户消息
     final tempUserMsg = Message(
@@ -104,14 +126,33 @@ class ChatViewModel extends ChangeNotifier {
 
       final taskId = result['taskId'] as String?;
       if (taskId != null) {
-        // 轮询任务结果
+        // 同时使用 WebSocket 和轮询（race）
+        _listenForTask(taskId);
         _startPolling(taskId);
       }
     } catch (e) {
-      _error = e.toString();
+      _addErrorMessage('请求失败：${e.toString()}');
       _isSending = false;
       notifyListeners();
     }
+  }
+
+  /// WebSocket 监听任务完成
+  void _listenForTask(String taskId) {
+    _wsUnsub?.call();
+    _wsUnsub = _ws.onEventType('task:update', (payload) {
+      if (payload is Map<String, dynamic> &&
+          payload['taskId'] == taskId) {
+        final status = payload['status'] as String?;
+        if (status == 'succeeded' || status == 'failed') {
+          _wsUnsub?.call();
+          _wsUnsub = null;
+          _pollTimer?.cancel();
+          _pollTimer = null;
+          _handleTaskComplete(status == 'succeeded', payload['error'] as String?);
+        }
+      }
+    });
   }
 
   /// 轮询任务状态
@@ -124,21 +165,78 @@ class ChatViewModel extends ChangeNotifier {
           final task = await _chatService.getTask(taskId);
           if (task.isCompleted || task.isFailed) {
             timer.cancel();
-            _isSending = false;
-            // 重新加载消息获取最新
-            if (_currentConversation != null) {
-              await loadMessages(_currentConversation!.id);
-            }
-            notifyListeners();
+            _pollTimer = null;
+            _wsUnsub?.call();
+            _wsUnsub = null;
+            _handleTaskComplete(task.isCompleted, task.error);
           }
         } catch (e) {
           timer.cancel();
+          _pollTimer = null;
+          _wsUnsub?.call();
+          _wsUnsub = null;
           _isSending = false;
           _error = e.toString();
           notifyListeners();
         }
       },
     );
+  }
+
+  /// 任务完成处理
+  Future<void> _handleTaskComplete(bool succeeded, String? error) async {
+    _isSending = false;
+    if (succeeded && _currentConversation != null) {
+      await loadMessages(_currentConversation!.id);
+      // 自动生成标题
+      _autoGenerateTitle();
+    } else if (!succeeded) {
+      _addErrorMessage(error ?? '请求处理失败，请重试。');
+    }
+    notifyListeners();
+  }
+
+  /// 自动生成标题
+  void _autoGenerateTitle() {
+    if (_currentConversation == null) return;
+    _chatService.generateTitle(_currentConversation!.id).then((title) {
+      if (title.isNotEmpty && title != '新对话') {
+        final idx = _conversations.indexWhere(
+          (c) => c.id == _currentConversation!.id,
+        );
+        if (idx >= 0) {
+          _conversations[idx] = Conversation(
+            id: _conversations[idx].id,
+            title: title,
+            status: _conversations[idx].status,
+            createdAt: _conversations[idx].createdAt,
+            updatedAt: DateTime.now().toIso8601String(),
+          );
+          if (_currentConversation?.id == _conversations[idx].id) {
+            _currentConversation = _conversations[idx];
+          }
+          notifyListeners();
+        }
+      }
+    }).catchError((_) {});
+  }
+
+  void _addErrorMessage(String text) {
+    if (_currentConversation == null) return;
+    _messages.add(Message(
+      id: 'err_${DateTime.now().millisecondsSinceEpoch}',
+      conversationId: _currentConversation!.id,
+      role: 'assistant',
+      content: '⚠️ $text',
+      createdAt: DateTime.now().toIso8601String(),
+    ));
+  }
+
+  /// 清除当前选择（回到对话列表）
+  void clearSelection() {
+    _currentConversation = null;
+    _messages = [];
+    notifyListeners();
   }
 
   /// 删除对话
@@ -174,6 +272,9 @@ class ChatViewModel extends ChangeNotifier {
           createdAt: _conversations[idx].createdAt,
           updatedAt: DateTime.now().toIso8601String(),
         );
+        if (_currentConversation?.id == id) {
+          _currentConversation = _conversations[idx];
+        }
         notifyListeners();
       }
     } catch (e) {
@@ -182,9 +283,55 @@ class ChatViewModel extends ChangeNotifier {
     }
   }
 
+  // ====================== LifecycleAware ======================
+
+  @override
+  String get stateKey => 'chat';
+
+  @override
+  void onResumed() {
+    // 回到前台：刷新对话列表 & 当前消息
+    loadConversations();
+    if (_currentConversation != null) {
+      loadMessages(_currentConversation!.id);
+    }
+  }
+
+  @override
+  Map<String, dynamic>? saveState() {
+    return {
+      'currentConversationId': _currentConversation?.id,
+    };
+  }
+
+  @override
+  void restoreState(Map<String, dynamic> state) {
+    final convId = state['currentConversationId'] as String?;
+    if (convId != null && convId.isNotEmpty) {
+      // 延迟恢复：等 loadConversations 完成后选中
+      _pendingRestoreConvId = convId;
+    }
+  }
+
+  String? _pendingRestoreConvId;
+
+  /// 在 loadConversations 之后调用，如果有待恢复的 conversationId 则自动选中
+  void _tryRestorePending() {
+    if (_pendingRestoreConvId != null) {
+      final match = _conversations
+          .where((c) => c.id == _pendingRestoreConvId)
+          .toList();
+      if (match.isNotEmpty) {
+        selectConversation(match.first);
+      }
+      _pendingRestoreConvId = null;
+    }
+  }
+
   @override
   void dispose() {
     _pollTimer?.cancel();
+    _wsUnsub?.call();
     super.dispose();
   }
 }

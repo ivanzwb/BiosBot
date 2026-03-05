@@ -5,7 +5,7 @@ import '../widgets/conversation_list.dart';
 import '../widgets/message_bubble.dart';
 import '../widgets/chat_input.dart';
 
-/// 聊天主页面 — 左侧对话列表 + 中间消息区域 + 底部输入框
+/// 聊天主页面 — 移动端: 对话列表 ↔ 消息视图切换; 宽屏: 左右分栏
 class ChatPage extends StatefulWidget {
   const ChatPage({super.key});
 
@@ -14,141 +14,251 @@ class ChatPage extends StatefulWidget {
 }
 
 class _ChatPageState extends State<ChatPage> {
+  final ScrollController _scrollController = ScrollController();
+
   @override
   void initState() {
     super.initState();
-    // 进入页面时加载对话列表
     WidgetsBinding.instance.addPostFrameCallback((_) {
       context.read<ChatViewModel>().loadConversations();
     });
   }
 
   @override
+  void dispose() {
+    _scrollController.dispose();
+    super.dispose();
+  }
+
+  void _scrollToBottom() {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (_scrollController.hasClients) {
+        _scrollController.animateTo(
+          _scrollController.position.maxScrollExtent,
+          duration: const Duration(milliseconds: 300),
+          curve: Curves.easeOut,
+        );
+      }
+    });
+  }
+
+  @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      body: Row(
-        children: [
-          // 左侧对话列表
-          const SizedBox(
-            width: 280,
-            child: ConversationList(),
-          ),
-          const VerticalDivider(width: 1),
-          // 右侧消息区域
-          Expanded(
-            child: Consumer<ChatViewModel>(
-              builder: (context, vm, _) {
-                if (vm.currentConversation == null) {
-                  return const _EmptyState();
-                }
-                return Column(
-                  children: [
-                    // 顶部标题栏
-                    _ConversationHeader(
-                      title: vm.currentConversation!.title,
-                    ),
-                    const Divider(height: 1),
-                    // 消息列表
-                    Expanded(
-                      child: vm.messages.isEmpty
-                          ? const Center(
-                              child: Text('发送消息开始对话'),
-                            )
-                          : ListView.builder(
-                              padding: const EdgeInsets.all(16),
-                              itemCount: vm.messages.length,
-                              itemBuilder: (context, index) {
-                                return MessageBubble(
-                                  message: vm.messages[index],
-                                );
-                              },
-                            ),
-                    ),
-                    // 加载指示器
-                    if (vm.isSending)
-                      const Padding(
-                        padding: EdgeInsets.symmetric(vertical: 8),
-                        child: Row(
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          children: [
-                            SizedBox(
-                              width: 16,
-                              height: 16,
-                              child: CircularProgressIndicator(strokeWidth: 2),
-                            ),
-                            SizedBox(width: 8),
-                            Text('Agent 正在思考...'),
-                          ],
-                        ),
-                      ),
-                    // 输入框
-                    const ChatInput(),
-                  ],
-                );
+    final isWide = MediaQuery.of(context).size.width > 600;
+
+    return Consumer<ChatViewModel>(
+      builder: (context, vm, _) {
+        // 宽屏: 左右分栏
+        if (isWide) {
+          return Row(
+            children: [
+              SizedBox(
+                width: 300,
+                child: _ConversationPanel(onSelected: () => _scrollToBottom()),
+              ),
+              const VerticalDivider(width: 1),
+              Expanded(
+                child: _ChatPanel(
+                  scrollController: _scrollController,
+                  onSent: _scrollToBottom,
+                ),
+              ),
+            ],
+          );
+        }
+
+        // 窄屏: 选中对话则显示消息视图，否则显示对话列表
+        if (vm.currentConversation != null) {
+          return _ChatPanel(
+            scrollController: _scrollController,
+            onSent: _scrollToBottom,
+            showBack: true,
+          );
+        }
+        return _ConversationPanel(onSelected: () => _scrollToBottom());
+      },
+    );
+  }
+}
+
+/// 对话列表面板
+class _ConversationPanel extends StatelessWidget {
+  final VoidCallback onSelected;
+  const _ConversationPanel({required this.onSelected});
+
+  @override
+  Widget build(BuildContext context) {
+    final vm = context.watch<ChatViewModel>();
+    return Column(
+      children: [
+        // 标题 + 新建对话按钮
+        AppBar(
+          automaticallyImplyLeading: false,
+          title: const Text('CloudBrain'),
+          actions: [
+            IconButton(
+              icon: const Icon(Icons.add),
+              tooltip: '新建对话',
+              onPressed: () {
+                vm.createConversation();
+                onSelected();
               },
             ),
-          ),
-        ],
-      ),
+          ],
+        ),
+        Expanded(
+          child: vm.isLoading
+              ? const Center(child: CircularProgressIndicator())
+              : vm.conversations.isEmpty
+                  ? Center(
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(Icons.chat_bubble_outline,
+                              size: 48,
+                              color: Theme.of(context).colorScheme.outline),
+                          const SizedBox(height: 12),
+                          Text('暂无对话',
+                              style: TextStyle(
+                                  color:
+                                      Theme.of(context).colorScheme.outline)),
+                          const SizedBox(height: 16),
+                          FilledButton.icon(
+                            icon: const Icon(Icons.add),
+                            label: const Text('新建对话'),
+                            onPressed: () {
+                              vm.createConversation();
+                              onSelected();
+                            },
+                          ),
+                        ],
+                      ),
+                    )
+                  : ConversationList(onSelected: onSelected),
+        ),
+      ],
     );
   }
 }
 
-class _EmptyState extends StatelessWidget {
-  const _EmptyState();
+/// 消息视图面板
+class _ChatPanel extends StatelessWidget {
+  final ScrollController scrollController;
+  final VoidCallback onSent;
+  final bool showBack;
+
+  const _ChatPanel({
+    required this.scrollController,
+    required this.onSent,
+    this.showBack = false,
+  });
 
   @override
   Widget build(BuildContext context) {
-    return Center(
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Icon(Icons.chat_bubble_outline,
-              size: 64, color: Theme.of(context).colorScheme.outline),
-          const SizedBox(height: 16),
-          Text(
-            '选择或创建一个对话开始',
-            style: Theme.of(context).textTheme.bodyLarge?.copyWith(
-                  color: Theme.of(context).colorScheme.outline,
+    final vm = context.watch<ChatViewModel>();
+
+    if (vm.currentConversation == null) {
+      return _EmptyState(onSent: onSent);
+    }
+
+    return Column(
+      children: [
+        // 顶部标题栏
+        AppBar(
+          automaticallyImplyLeading: false,
+          leading: showBack
+              ? IconButton(
+                  icon: const Icon(Icons.arrow_back),
+                  onPressed: () {
+                    // 取消选择，回到对话列表
+                    vm.selectConversation(vm.currentConversation!).then((_) {
+                      // hack: set current to null
+                    });
+                    // 直接清空 currentConversation
+                    vm.clearSelection();
+                  },
+                )
+              : null,
+          title: Text(
+            vm.currentConversation!.title,
+            overflow: TextOverflow.ellipsis,
+          ),
+        ),
+        // 消息列表
+        Expanded(
+          child: vm.messages.isEmpty
+              ? const Center(child: Text('发送消息开始对话'))
+              : ListView.builder(
+                  controller: scrollController,
+                  padding: const EdgeInsets.all(16),
+                  itemCount: vm.messages.length,
+                  itemBuilder: (context, index) {
+                    return MessageBubble(message: vm.messages[index]);
+                  },
                 ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _ConversationHeader extends StatelessWidget {
-  final String title;
-  const _ConversationHeader({required this.title});
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      height: 56,
-      padding: const EdgeInsets.symmetric(horizontal: 16),
-      child: Row(
-        children: [
-          Expanded(
-            child: Text(
-              title,
-              style: Theme.of(context).textTheme.titleMedium,
-              overflow: TextOverflow.ellipsis,
+        ),
+        // 加载指示器
+        if (vm.isSending)
+          Padding(
+            padding: const EdgeInsets.symmetric(vertical: 8),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                SizedBox(
+                  width: 16,
+                  height: 16,
+                  child: CircularProgressIndicator(
+                    strokeWidth: 2,
+                    color: Theme.of(context).colorScheme.primary,
+                  ),
+                ),
+                const SizedBox(width: 8),
+                const Text('Agent 正在思考...'),
+              ],
             ),
           ),
-          // 导航按钮
-          IconButton(
-            icon: const Icon(Icons.smart_toy_outlined),
-            tooltip: 'Agent 管理',
-            onPressed: () => Navigator.of(context).pushNamed('/agents'),
+        // 输入框
+        ChatInput(onSent: onSent),
+      ],
+    );
+  }
+}
+
+/// 空状态 — 没有选中对话时
+class _EmptyState extends StatelessWidget {
+  final VoidCallback onSent;
+  const _EmptyState({required this.onSent});
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      children: [
+        Expanded(
+          child: Center(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(Icons.psychology,
+                    size: 72,
+                    color: Theme.of(context).colorScheme.primary),
+                const SizedBox(height: 16),
+                Text(
+                  '🧠 CloudBrain',
+                  style: Theme.of(context).textTheme.headlineSmall,
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  '你的多智能体助手。输入问题开始对话。',
+                  style: TextStyle(
+                    color: Theme.of(context).colorScheme.outline,
+                  ),
+                ),
+              ],
+            ),
           ),
-          IconButton(
-            icon: const Icon(Icons.settings_outlined),
-            tooltip: '设置',
-            onPressed: () => Navigator.of(context).pushNamed('/settings'),
-          ),
-        ],
-      ),
+        ),
+        ChatInput(onSent: onSent),
+      ],
     );
   }
 }

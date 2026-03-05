@@ -58,4 +58,10 @@ class ChatService {
     final data = await _api.get('/tasks/$taskId');
     return Task.fromJson(data);
   }
+
+  /// 自动生成对话标题
+  Future<String> generateTitle(String conversationId) async {
+    final data = await _api.post('/conversations/$conversationId/generate-title');
+    return (data as Map<String, dynamic>)['title'] as String? ?? '';
+  }
 }

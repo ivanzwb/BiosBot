@@ -4,7 +4,8 @@ import '../viewmodels/chat_viewmodel.dart';
 
 /// 底部消息输入框组件
 class ChatInput extends StatefulWidget {
-  const ChatInput({super.key});
+  final VoidCallback? onSent;
+  const ChatInput({super.key, this.onSent});
 
   @override
   State<ChatInput> createState() => _ChatInputState();
@@ -21,6 +22,7 @@ class _ChatInputState extends State<ChatInput> {
     context.read<ChatViewModel>().sendMessage(text);
     _controller.clear();
     _focusNode.requestFocus();
+    widget.onSent?.call();
   }
 
   @override
@@ -42,30 +44,33 @@ class _ChatInputState extends State<ChatInput> {
           top: BorderSide(color: Theme.of(context).dividerColor),
         ),
       ),
-      child: Row(
-        children: [
-          Expanded(
-            child: TextField(
-              controller: _controller,
-              focusNode: _focusNode,
-              maxLines: 4,
-              minLines: 1,
-              textInputAction: TextInputAction.send,
-              enabled: !vm.isSending && vm.currentConversation != null,
-              decoration: const InputDecoration(
-                hintText: '输入消息...',
-                border: OutlineInputBorder(),
+      child: SafeArea(
+        top: false,
+        child: Row(
+          children: [
+            Expanded(
+              child: TextField(
+                controller: _controller,
+                focusNode: _focusNode,
+                maxLines: 4,
+                minLines: 1,
+                textInputAction: TextInputAction.send,
+                enabled: !vm.isSending,
+                decoration: const InputDecoration(
+                  hintText: '输入消息...',
+                  border: OutlineInputBorder(),
+                ),
+                onSubmitted: (_) => _send(),
               ),
-              onSubmitted: (_) => _send(),
             ),
-          ),
-          const SizedBox(width: 8),
-          IconButton.filled(
-            icon: const Icon(Icons.send),
-            onPressed: vm.isSending ? null : _send,
-            tooltip: '发送',
-          ),
-        ],
+            const SizedBox(width: 8),
+            IconButton.filled(
+              icon: const Icon(Icons.send),
+              onPressed: vm.isSending ? null : _send,
+              tooltip: '发送',
+            ),
+          ],
+        ),
       ),
     );
   }
