@@ -25,6 +25,8 @@ import logger from '../infra/logger/logger';
 // 配置类型
 // ============================================================
 
+import { McpServerConfig } from './mcp-client';
+
 export interface DomainAgentConfig {
   /** Agent 唯一标识（与目录名一致，如 "stock-agent"） */
   id: string;
@@ -45,6 +47,8 @@ export interface DomainAgentConfig {
    * 会一起绑定到 ChatModel 上参与 tool-calling 循环。
    */
   extraTools?: DynamicStructuredTool[];
+  /** Agent 专属的 MCP Server 配置（不与其他 Agent 共享） */
+  mcpServers?: McpServerConfig[];
 }
 
 /**
@@ -141,6 +145,7 @@ export function createDomainAgent(config: DomainAgentConfig): DomainAgent {
     defaultTemperature = 0.5,
     agentDir,
     extraTools: staticExtraTools = [],
+    mcpServers = [],
   } = config;
 
   // 在模块加载时预扫描 Agent 目录下的 Skill 文件
@@ -159,6 +164,7 @@ export function createDomainAgent(config: DomainAgentConfig): DomainAgent {
         maxTokens: input.options?.maxTokens,
         extraTools: staticExtraTools,
         history: input.context?.history,
+        mcpServers,
       });
       return { answer };
     } catch (err) {

@@ -192,10 +192,11 @@ async function directAnswer(input: AgentInput): Promise<string> {
 
 如果不确定要操作哪个目录，可以先调用 \`list_allowed_directories\` 查看允许访问的目录，然后再列出该目录内容。`;
 
-  // 从 agent_model_mapping 读取可配置的 temperature
+  // 从 agent_model_mapping 读取可配置的 temperature 和 mcpServers
   const mapping = getConfigJSON<any>('agent_model_mapping');
   const proxyCfg = mapping?.agents?.['proxy-agent'] || {};
   const cfgTemperature = proxyCfg.temperature != null ? Number(proxyCfg.temperature) : 0.7;
+  const proxyMcpServers = proxyCfg.mcpServers || [];
 
   return runAgent({
     agentId: 'proxy-agent',
@@ -207,6 +208,7 @@ async function directAnswer(input: AgentInput): Promise<string> {
     temperature: input.options?.temperature,
     maxTokens: input.options?.maxTokens,
     history: input.context?.history,
+    mcpServers: proxyMcpServers,
   });
 }
 

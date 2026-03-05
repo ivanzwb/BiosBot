@@ -4,7 +4,7 @@ import '../viewmodels/settings_viewmodel.dart';
 import '../../../models/agent.dart';
 import '../../../services/agent_service.dart';
 
-/// 设置页面 — 模型管理 + Proxy Agent 配置(5 Tab)
+/// 设置页面 — 分组可折叠布局
 class SettingsPage extends StatefulWidget {
   const SettingsPage({super.key});
 
@@ -13,6 +13,9 @@ class SettingsPage extends StatefulWidget {
 }
 
 class _SettingsPageState extends State<SettingsPage> {
+  // 控制各分组展开状态
+  final Set<int> _expandedSections = {0}; // 默认展开第一个
+
   @override
   void initState() {
     super.initState();
@@ -39,103 +42,200 @@ class _SettingsPageState extends State<SettingsPage> {
             automaticallyImplyLeading: false,
             title: const Text('设置'),
           ),
-          body: ListView(
-            padding: const EdgeInsets.all(20),
-            children: [
-              // ==================== 模型管理 ====================
-              _SectionHeader(
-                title: '模型管理',
-                trailing: FilledButton.icon(
-                  icon: const Icon(Icons.add, size: 18),
-                  label: const Text('添加'),
-                  onPressed: () => _showModelEditor(context, vm, null),
-                ),
-              ),
-              const SizedBox(height: 8),
-              if (vm.models.isEmpty)
-                const Card(
-                  child: Padding(
-                    padding: EdgeInsets.all(24),
-                    child: Center(child: Text('暂无模型，点击「添加」创建')),
+          body: SingleChildScrollView(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+            child: ExpansionPanelList(
+              elevation: 1,
+              expandedHeaderPadding: const EdgeInsets.symmetric(vertical: 4),
+              expansionCallback: (index, isExpanded) {
+                setState(() {
+                  if (isExpanded) {
+                    _expandedSections.remove(index);
+                  } else {
+                    _expandedSections.add(index);
+                  }
+                });
+              },
+              children: [
+                // ==================== 模型管理 ====================
+                ExpansionPanel(
+                  isExpanded: _expandedSections.contains(0),
+                  canTapOnHeader: true,
+                  headerBuilder: (context, isExpanded) => ListTile(
+                    leading: const Icon(Icons.smart_toy_outlined),
+                    title: Text('模型管理',
+                        style: Theme.of(context).textTheme.titleMedium),
+                    subtitle: Text('${vm.models.length} 个模型'),
                   ),
-                )
-              else
-                ...vm.models.map((m) => _ModelCard(
-                      model: m,
-                      isDefault: m.id == vm.defaultModelId,
-                      testResult: vm.getTestResult(m.id),
-                      onEdit: () => _showModelEditor(context, vm, m),
-                      onDelete: () => vm.deleteModel(m.id),
-                      onSetDefault: () => vm.setDefaultModel(m.id),
-                      onTest: () => vm.testModel(m),
-                    )),
-              const SizedBox(height: 32),
-              const Divider(),
-              const SizedBox(height: 16),
-
-              // ==================== Proxy Agent ====================
-              _SectionHeader(title: 'Proxy Agent 配置'),
-              const SizedBox(height: 8),
-              _ProxyAgentConfig(vm: vm),
-
-              const SizedBox(height: 32),
-              const Divider(),
-              const SizedBox(height: 16),
-
-              // ==================== 全局Tools ====================
-              _SectionHeader(
-                title: '全局Tools',
-                trailing: FilledButton.icon(
-                  icon: const Icon(Icons.add, size: 18),
-                  label: const Text('添加'),
-                  onPressed: () => _showGlobalToolEditor(context, vm, null),
+                  body: _buildModelsSection(vm),
                 ),
-              ),
-              const SizedBox(height: 8),
-              _GlobalToolsSection(vm: vm, onEdit: (tool) => _showGlobalToolEditor(context, vm, tool)),
 
-              const SizedBox(height: 32),
-              const Divider(),
-              const SizedBox(height: 16),
-
-              // ==================== MCP Server ====================
-              _SectionHeader(
-                title: 'MCP Server',
-                trailing: FilledButton.icon(
-                  icon: const Icon(Icons.add, size: 18),
-                  label: const Text('添加'),
-                  onPressed: () => _showMcpServerEditor(context, vm, null),
+                // ==================== Proxy Agent ====================
+                ExpansionPanel(
+                  isExpanded: _expandedSections.contains(1),
+                  canTapOnHeader: true,
+                  headerBuilder: (context, isExpanded) => ListTile(
+                    leading: const Icon(Icons.hub_outlined),
+                    title: Text('Proxy Agent',
+                        style: Theme.of(context).textTheme.titleMedium),
+                    subtitle: const Text('意图识别 / 任务路由配置'),
+                  ),
+                  body: _ProxyAgentConfig(vm: vm),
                 ),
-              ),
-              const SizedBox(height: 8),
-              _McpServersSection(vm: vm, onEdit: (server) => _showMcpServerEditor(context, vm, server)),
 
-              const SizedBox(height: 32),
-              const Divider(),
-              const SizedBox(height: 16),
+                // ==================== 全局Tools ====================
+                ExpansionPanel(
+                  isExpanded: _expandedSections.contains(2),
+                  canTapOnHeader: true,
+                  headerBuilder: (context, isExpanded) => ListTile(
+                    leading: const Icon(Icons.handyman_outlined),
+                    title: Text('全局Tools',
+                        style: Theme.of(context).textTheme.titleMedium),
+                    subtitle: Text('${vm.globalTools.length} 个工具'),
+                  ),
+                  body: _buildGlobalToolsSection(vm),
+                ),
 
-              // ==================== 关于 ====================
-              Card(
-                child: Column(
-                  children: [
-                    ListTile(
-                      leading: const Icon(Icons.info_outline),
-                      title: const Text('关于'),
-                      subtitle: const Text('BiosBot v1.0.0'),
+                // ==================== 全局MCP Server ====================
+                ExpansionPanel(
+                  isExpanded: _expandedSections.contains(3),
+                  canTapOnHeader: true,
+                  headerBuilder: (context, isExpanded) => ListTile(
+                    leading: const Icon(Icons.dns_outlined),
+                    title: Text('全局MCP Server',
+                        style: Theme.of(context).textTheme.titleMedium),
+                    subtitle: Text('${vm.mcpServers.length} 个服务器'),
+                  ),
+                  body: _buildMcpServersSection(vm),
+                ),
+
+                // ==================== 关于 ====================
+                ExpansionPanel(
+                  isExpanded: _expandedSections.contains(4),
+                  canTapOnHeader: true,
+                  headerBuilder: (context, isExpanded) => ListTile(
+                    leading: const Icon(Icons.info_outline),
+                    title: Text('关于',
+                        style: Theme.of(context).textTheme.titleMedium),
+                    subtitle: const Text('BiosBot v1.0.0'),
+                  ),
+                  body: const Padding(
+                    padding: EdgeInsets.fromLTRB(16, 0, 16, 16),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text('BiosBot - AI Agent 平台'),
+                        SizedBox(height: 8),
+                        Text('版本: 1.0.0',
+                            style: TextStyle(color: Colors.grey)),
+                      ],
                     ),
-                  ],
+                  ),
                 ),
-              ),
-
-              if (vm.error != null) ...[
-                const SizedBox(height: 16),
-                Text(vm.error!,
-                    style: TextStyle(color: Theme.of(context).colorScheme.error)),
               ],
-            ],
+            ),
           ),
         );
+
+        // 显示提示
       },
+    );
+  }
+
+  // ==================== 模型管理部分 ====================
+  Widget _buildModelsSection(SettingsViewModel vm) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            mainAxisAlignment: MainAxisAlignment.end,
+            children: [
+              FilledButton.icon(
+                icon: const Icon(Icons.add, size: 18),
+                label: const Text('添加'),
+                onPressed: () => _showModelEditor(context, vm, null),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          if (vm.models.isEmpty)
+            const Card(
+              child: Padding(
+                padding: EdgeInsets.all(24),
+                child: Center(child: Text('暂无模型，点击「添加」创建')),
+              ),
+            )
+          else
+            ...vm.models.map((m) => _ModelCard(
+                  model: m,
+                  isDefault: m.id == vm.defaultModelId,
+                  testResult: vm.getTestResult(m.id),
+                  onEdit: () => _showModelEditor(context, vm, m),
+                  onDelete: () => vm.deleteModel(m.id),
+                  onSetDefault: () => vm.setDefaultModel(m.id),
+                  onTest: () => vm.testModel(m),
+                )),
+          if (vm.error != null) ...[
+            const SizedBox(height: 16),
+            Text(vm.error!,
+                style: TextStyle(color: Theme.of(context).colorScheme.error)),
+          ],
+        ],
+      ),
+    );
+  }
+
+  // ==================== 全局Tools部分 ====================
+  Widget _buildGlobalToolsSection(SettingsViewModel vm) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            mainAxisAlignment: MainAxisAlignment.end,
+            children: [
+              FilledButton.icon(
+                icon: const Icon(Icons.add, size: 18),
+                label: const Text('添加'),
+                onPressed: () => _showGlobalToolEditor(context, vm, null),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          _GlobalToolsSection(
+              vm: vm,
+              onEdit: (tool) => _showGlobalToolEditor(context, vm, tool)),
+        ],
+      ),
+    );
+  }
+
+  // ==================== 全局MCP Server部分 ====================
+  Widget _buildMcpServersSection(SettingsViewModel vm) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            mainAxisAlignment: MainAxisAlignment.end,
+            children: [
+              FilledButton.icon(
+                icon: const Icon(Icons.add, size: 18),
+                label: const Text('添加'),
+                onPressed: () => _showMcpServerEditor(context, vm, null),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          _McpServersSection(
+              vm: vm,
+              onEdit: (server) => _showMcpServerEditor(context, vm, server)),
+        ],
+      ),
     );
   }
 
@@ -1247,23 +1347,6 @@ class _GlobalToolTile extends StatelessWidget {
   }
 }
 
-class _SectionHeader extends StatelessWidget {
-  final String title;
-  final Widget? trailing;
-  const _SectionHeader({required this.title, this.trailing});
-
-  @override
-  Widget build(BuildContext context) {
-    return Row(
-      children: [
-        Text(title, style: Theme.of(context).textTheme.titleLarge),
-        const Spacer(),
-        if (trailing != null) trailing!,
-      ],
-    );
-  }
-}
-
 /// 模型卡片
 class _ModelCard extends StatelessWidget {
   final ModelProvider model;
@@ -1426,7 +1509,7 @@ class _ProxyAgentConfigState extends State<_ProxyAgentConfig>
   @override
   void initState() {
     super.initState();
-    _tabCtrl = TabController(length: 5, vsync: this);
+    _tabCtrl = TabController(length: 6, vsync: this);
     _classifyCtrl =
         TextEditingController(text: widget.vm.proxyClassifyPrompt);
     _aggregateCtrl =
@@ -1463,6 +1546,7 @@ class _ProxyAgentConfigState extends State<_ProxyAgentConfig>
               Tab(text: 'Prompt'),
               Tab(text: 'Skills'),
               Tab(text: 'Tools'),
+              Tab(text: 'MCP Server'),
               Tab(text: '知识库'),
             ],
           ),
@@ -1475,6 +1559,7 @@ class _ProxyAgentConfigState extends State<_ProxyAgentConfig>
                 _buildPromptTab(vm),
                 _buildSkillsTab(vm),
                 _buildToolsTab(vm),
+                _buildMcpTab(vm),
                 _buildKbTab(vm),
               ],
             ),
@@ -1901,6 +1986,612 @@ class _ProxyAgentConfigState extends State<_ProxyAgentConfig>
         ),
       ),
     );
+  }
+
+  // MCP Server
+  Widget _buildMcpTab(SettingsViewModel vm) {
+    final servers = vm.proxyMcpServers;
+    return Column(
+      children: [
+        Padding(
+          padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
+          child: Row(
+            children: [
+              Text('MCP Server (${servers.length})',
+                  style: Theme.of(context).textTheme.titleSmall),
+              const Spacer(),
+              FilledButton.icon(
+                icon: const Icon(Icons.add, size: 16),
+                label: const Text('添加'),
+                onPressed: () => _showProxyMcpServerEditor(null),
+              ),
+            ],
+          ),
+        ),
+        const Padding(
+          padding: EdgeInsets.symmetric(horizontal: 16),
+          child: Text(
+            '此处配置的 MCP Server 仅供 Proxy Agent 使用。',
+            style: TextStyle(color: Colors.grey, fontSize: 12),
+          ),
+        ),
+        const SizedBox(height: 8),
+        Expanded(
+          child: servers.isEmpty
+              ? const Center(child: Text('暂无 MCP Server 配置'))
+              : ListView.builder(
+                  padding: const EdgeInsets.symmetric(horizontal: 16),
+                  itemCount: servers.length,
+                  itemBuilder: (context, i) {
+                    final server = servers[i];
+                    final isExpanded =
+                        vm.proxyMcpServerTools.containsKey(server.id);
+                    final tools = vm.proxyMcpServerTools[server.id] ?? [];
+                    final loading = vm.loadingProxyMcpTools[server.id] ?? false;
+
+                    return Card(
+                      child: Column(
+                        children: [
+                          ListTile(
+                            leading: Icon(
+                              server.isRemote ? Icons.cloud : Icons.storage,
+                              color: server.enabled
+                                  ? Theme.of(context).colorScheme.primary
+                                  : Colors.grey,
+                            ),
+                            title: Row(
+                              children: [
+                                Expanded(child: Text(server.id)),
+                                if (!server.enabled)
+                                  Container(
+                                    padding: const EdgeInsets.symmetric(
+                                        horizontal: 6, vertical: 2),
+                                    decoration: BoxDecoration(
+                                      color: Colors.grey[200],
+                                      borderRadius: BorderRadius.circular(4),
+                                    ),
+                                    child: const Text('已禁用',
+                                        style: TextStyle(fontSize: 10)),
+                                  ),
+                              ],
+                            ),
+                            subtitle: Text(
+                              server.isRemote
+                                  ? server.url ?? ''
+                                  : '${server.command ?? ''} ${server.args.take(2).join(' ')}${server.args.length > 2 ? '...' : ''}',
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                            trailing: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                IconButton(
+                                  icon: loading
+                                      ? const SizedBox(
+                                          width: 16,
+                                          height: 16,
+                                          child: CircularProgressIndicator(
+                                              strokeWidth: 2),
+                                        )
+                                      : const Icon(Icons.build, size: 20),
+                                  onPressed: server.enabled
+                                      ? () => _loadProxyMcpServerTools(server)
+                                      : null,
+                                  tooltip: '查看工具',
+                                ),
+                                Switch(
+                                  value: server.enabled,
+                                  onChanged: (_) =>
+                                      _toggleProxyMcpServer(server),
+                                ),
+                                IconButton(
+                                  icon: const Icon(Icons.edit, size: 20),
+                                  onPressed: () =>
+                                      _showProxyMcpServerEditor(server),
+                                ),
+                                IconButton(
+                                  icon: Icon(Icons.delete_outline,
+                                      size: 20,
+                                      color:
+                                          Theme.of(context).colorScheme.error),
+                                  onPressed: () =>
+                                      _deleteProxyMcpServer(server.id),
+                                ),
+                              ],
+                            ),
+                          ),
+                          if (isExpanded && tools.isNotEmpty)
+                            Container(
+                              width: double.infinity,
+                              padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
+                              child: Wrap(
+                                spacing: 6,
+                                runSpacing: 4,
+                                children: tools
+                                    .map((tool) => Chip(
+                                          label: Text(tool.name,
+                                              style:
+                                                  const TextStyle(fontSize: 12)),
+                                          backgroundColor: Theme.of(context)
+                                              .colorScheme
+                                              .primaryContainer,
+                                          visualDensity: VisualDensity.compact,
+                                        ))
+                                    .toList(),
+                              ),
+                            ),
+                        ],
+                      ),
+                    );
+                  },
+                ),
+        ),
+      ],
+    );
+  }
+
+  void _showProxyMcpServerEditor(McpServerConfig? existing) {
+    final idCtrl = TextEditingController(text: existing?.id ?? '');
+    String type = existing?.type ?? 'local';
+    bool enabled = existing?.enabled ?? true;
+    final commandCtrl = TextEditingController(text: existing?.command ?? '');
+    final argsCtrl =
+        TextEditingController(text: existing?.args.join('\n') ?? '');
+    final envCtrl = TextEditingController(
+        text: existing?.env.entries.map((e) => '${e.key}=${e.value}').join('\n') ??
+            '');
+    final urlCtrl = TextEditingController(text: existing?.url ?? '');
+    final headersCtrl = TextEditingController(
+        text: existing?.headers.entries
+                .map((e) => '${e.key}: ${e.value}')
+                .join('\n') ??
+            '');
+
+    // npm install state (for local MCP)
+    bool installExpanded = false;
+    bool installing = false;
+    String? installError;
+    List<InstalledMcpPackage> installedPackages = [];
+    List<McpToolInfo> probedTools = [];
+    String? probedPackage;
+    String? probeError;
+    bool probing = false;
+    final packageCtrl = TextEditingController();
+
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      useSafeArea: true,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setBottomState) => Padding(
+          padding: EdgeInsets.only(
+            bottom: MediaQuery.of(ctx).viewInsets.bottom,
+            left: 20,
+            right: 20,
+            top: 20,
+          ),
+          child: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(existing != null ? '编辑 MCP Server' : '添加 MCP Server',
+                    style: Theme.of(context).textTheme.titleMedium),
+                const SizedBox(height: 16),
+                if (existing == null)
+                  TextField(
+                    controller: idCtrl,
+                    decoration: const InputDecoration(labelText: 'Server ID *'),
+                  ),
+                if (existing == null) const SizedBox(height: 12),
+                SwitchListTile(
+                  title: const Text('启用'),
+                  value: enabled,
+                  onChanged: (v) => setBottomState(() => enabled = v),
+                  contentPadding: EdgeInsets.zero,
+                ),
+                const SizedBox(height: 12),
+                SegmentedButton<String>(
+                  segments: const [
+                    ButtonSegment(value: 'local', label: Text('📦 本地')),
+                    ButtonSegment(value: 'remote', label: Text('🌐 远程')),
+                  ],
+                  selected: {type},
+                  onSelectionChanged: (v) =>
+                      setBottomState(() => type = v.first),
+                ),
+                const SizedBox(height: 16),
+                if (type == 'local') ...[
+                  // npm包安装区域（仅新增时显示）
+                  if (existing == null) ...[
+                    Container(
+                      decoration: BoxDecoration(
+                        color: Theme.of(context).colorScheme.primaryContainer.withOpacity(0.3),
+                        border: Border.all(color: Theme.of(context).colorScheme.primary.withOpacity(0.5)),
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      padding: const EdgeInsets.all(12),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Row(
+                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                            children: [
+                              Text(
+                                '📦 安装 npm 包（可选）',
+                                style: TextStyle(
+                                  fontWeight: FontWeight.w500,
+                                  color: Theme.of(context).colorScheme.primary,
+                                ),
+                              ),
+                              TextButton(
+                                onPressed: () async {
+                                  setBottomState(() => installExpanded = !installExpanded);
+                                  if (installExpanded) {
+                                    try {
+                                      final pkgs = await widget.vm.loadInstalledMcpPackages();
+                                      setBottomState(() => installedPackages = pkgs);
+                                    } catch (_) {}
+                                  }
+                                },
+                                style: TextButton.styleFrom(
+                                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+                                  minimumSize: Size.zero,
+                                ),
+                                child: Text(installExpanded ? '收起' : '展开', style: const TextStyle(fontSize: 12)),
+                              ),
+                            ],
+                          ),
+                          if (installExpanded) ...[
+                            const SizedBox(height: 12),
+                            // 错误提示
+                            if (installError != null)
+                              Container(
+                                width: double.infinity,
+                                padding: const EdgeInsets.all(12),
+                                margin: const EdgeInsets.only(bottom: 12),
+                                decoration: BoxDecoration(
+                                  color: Theme.of(context).colorScheme.errorContainer,
+                                  borderRadius: BorderRadius.circular(6),
+                                ),
+                                child: Text('❌ $installError',
+                                    style: TextStyle(color: Theme.of(context).colorScheme.error, fontSize: 12)),
+                              ),
+                            // 正在探测
+                            if (probing)
+                              Container(
+                                padding: const EdgeInsets.all(8),
+                                margin: const EdgeInsets.only(bottom: 12),
+                                child: const Row(
+                                  children: [
+                                    SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2)),
+                                    SizedBox(width: 8),
+                                    Text('🔍 正在检测 Tools...'),
+                                  ],
+                                ),
+                              ),
+                            // 探测成功
+                            if (probedTools.isNotEmpty && probedPackage != null)
+                              Container(
+                                width: double.infinity,
+                                padding: const EdgeInsets.all(12),
+                                margin: const EdgeInsets.only(bottom: 12),
+                                decoration: BoxDecoration(
+                                  color: Colors.green.shade100,
+                                  borderRadius: BorderRadius.circular(6),
+                                  border: Border.all(color: Colors.green),
+                                ),
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text('✅ $probedPackage 安装成功！',
+                                        style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.green)),
+                                    const SizedBox(height: 4),
+                                    Wrap(
+                                      spacing: 4,
+                                      runSpacing: 4,
+                                      children: probedTools.map((t) => Chip(
+                                        label: Text(t.name, style: const TextStyle(fontSize: 10)),
+                                        visualDensity: VisualDensity.compact,
+                                      )).toList(),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            // 探测失败
+                            if (probeError != null && !probing)
+                              Container(
+                                padding: const EdgeInsets.all(8),
+                                margin: const EdgeInsets.only(bottom: 12),
+                                decoration: BoxDecoration(
+                                  color: Colors.amber.shade100,
+                                  borderRadius: BorderRadius.circular(6),
+                                ),
+                                child: Text('⚠️ $probeError', style: const TextStyle(fontSize: 12, color: Colors.brown)),
+                              ),
+                            // 安装输入
+                            Row(
+                              children: [
+                                Expanded(
+                                  child: TextField(
+                                    controller: packageCtrl,
+                                    decoration: const InputDecoration(
+                                      isDense: true,
+                                      hintText: '包名，如 @modelcontextprotocol/server-filesystem',
+                                      contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                                    ),
+                                    style: const TextStyle(fontSize: 13),
+                                  ),
+                                ),
+                                const SizedBox(width: 8),
+                                FilledButton(
+                                  onPressed: installing ? null : () async {
+                                    if (packageCtrl.text.trim().isEmpty) return;
+                                    setBottomState(() {
+                                      installing = true;
+                                      installError = null;
+                                      probeError = null;
+                                      probedTools = [];
+                                      probedPackage = null;
+                                    });
+                                    try {
+                                      final result = await widget.vm.installMcpPackage(packageCtrl.text.trim());
+                                      if (result.success) {
+                                        // 探测 tools
+                                        setBottomState(() => probing = true);
+                                        try {
+                                          final probeResult = await widget.vm.probeMcpPackageTools(result.packageName);
+                                          if (probeResult.success && probeResult.tools.isNotEmpty) {
+                                            setBottomState(() {
+                                              probedTools = probeResult.tools;
+                                              probedPackage = result.packageName;
+                                            });
+                                          } else {
+                                            setBottomState(() => probeError = probeResult.error ?? '未检测到 Tools');
+                                          }
+                                        } catch (e) {
+                                          setBottomState(() => probeError = e.toString());
+                                        } finally {
+                                          setBottomState(() => probing = false);
+                                        }
+                                        // 刷新已安装列表
+                                        try {
+                                          final pkgs = await widget.vm.loadInstalledMcpPackages();
+                                          setBottomState(() => installedPackages = pkgs);
+                                        } catch (_) {}
+                                        packageCtrl.clear();
+                                      } else {
+                                        setBottomState(() => installError = result.stderr ?? result.message ?? '安装失败');
+                                      }
+                                    } catch (e) {
+                                      setBottomState(() => installError = e.toString());
+                                    } finally {
+                                      setBottomState(() => installing = false);
+                                    }
+                                  },
+                                  child: installing
+                                      ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
+                                      : const Text('安装'),
+                                ),
+                              ],
+                            ),
+                            const SizedBox(height: 8),
+                            Text('常用: @modelcontextprotocol/server-filesystem',
+                                style: TextStyle(fontSize: 11, color: Theme.of(context).colorScheme.outline)),
+                            // 已安装列表
+                            if (installedPackages.isNotEmpty) ...[
+                              const SizedBox(height: 8),
+                              ExpansionTile(
+                                title: Text('已安装的 MCP 包 (${installedPackages.length})',
+                                    style: const TextStyle(fontSize: 12)),
+                                tilePadding: EdgeInsets.zero,
+                                childrenPadding: const EdgeInsets.only(left: 16),
+                                children: installedPackages.map((pkg) => ListTile(
+                                  dense: true,
+                                  title: Text(pkg.name, style: const TextStyle(fontSize: 12)),
+                                  trailing: Text(pkg.version, style: const TextStyle(fontSize: 11, color: Colors.grey)),
+                                )).toList(),
+                              ),
+                            ],
+                          ],
+                        ],
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                  ],
+                  TextField(
+                    controller: commandCtrl,
+                    decoration: const InputDecoration(labelText: '启动命令 *'),
+                  ),
+                  const SizedBox(height: 12),
+                  TextField(
+                    controller: argsCtrl,
+                    decoration: const InputDecoration(
+                      labelText: '命令参数（每行一个）',
+                      hintText: '-y\n@anthropic/mcp-server-xxx',
+                    ),
+                    maxLines: 3,
+                  ),
+                  const SizedBox(height: 12),
+                  TextField(
+                    controller: envCtrl,
+                    decoration: const InputDecoration(
+                      labelText: '环境变量（KEY=VALUE 每行一个）',
+                      hintText: 'API_KEY=xxx',
+                    ),
+                    maxLines: 2,
+                  ),
+                ] else ...[
+                  TextField(
+                    controller: urlCtrl,
+                    decoration: const InputDecoration(labelText: '远程 URL *'),
+                  ),
+                  const SizedBox(height: 12),
+                  TextField(
+                    controller: headersCtrl,
+                    decoration: const InputDecoration(
+                      labelText: '请求头（KEY: VALUE 每行一个）',
+                      hintText: 'Authorization: Bearer xxx',
+                    ),
+                    maxLines: 2,
+                  ),
+                ],
+                const SizedBox(height: 20),
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.end,
+                  children: [
+                    TextButton(
+                      onPressed: () => Navigator.pop(ctx),
+                      child: const Text('取消'),
+                    ),
+                    const SizedBox(width: 8),
+                    FilledButton(
+                      onPressed: () async {
+                        final id = existing?.id ?? idCtrl.text.trim();
+                        if (id.isEmpty) {
+                          _flash('Server ID 不能为空');
+                          return;
+                        }
+                        if (type == 'local' && commandCtrl.text.trim().isEmpty) {
+                          _flash('启动命令不能为空');
+                          return;
+                        }
+                        if (type == 'remote' && urlCtrl.text.trim().isEmpty) {
+                          _flash('远程 URL 不能为空');
+                          return;
+                        }
+
+                        final args = argsCtrl.text
+                            .split('\n')
+                            .map((s) => s.trim())
+                            .where((s) => s.isNotEmpty)
+                            .toList();
+
+                        final env = <String, String>{};
+                        for (final line in envCtrl.text.split('\n')) {
+                          final idx = line.indexOf('=');
+                          if (idx > 0) {
+                            env[line.substring(0, idx).trim()] =
+                                line.substring(idx + 1).trim();
+                          }
+                        }
+
+                        final headers = <String, String>{};
+                        for (final line in headersCtrl.text.split('\n')) {
+                          final idx = line.indexOf(':');
+                          if (idx > 0) {
+                            headers[line.substring(0, idx).trim()] =
+                                line.substring(idx + 1).trim();
+                          }
+                        }
+
+                        final newServer = McpServerConfig(
+                          id: id,
+                          type: type,
+                          enabled: enabled,
+                          command:
+                              type == 'local' ? commandCtrl.text.trim() : null,
+                          args: type == 'local' ? args : [],
+                          env: type == 'local' ? env : {},
+                          url: type == 'remote' ? urlCtrl.text.trim() : null,
+                          headers: type == 'remote' ? headers : {},
+                        );
+
+                        final vm = widget.vm;
+                        final servers = List<McpServerConfig>.from(vm.proxyMcpServers);
+                        if (existing != null) {
+                          final idx = servers.indexWhere((s) => s.id == existing.id);
+                          if (idx >= 0) servers[idx] = newServer;
+                        } else {
+                          if (servers.any((s) => s.id == id)) {
+                            _flash('Server ID 已存在');
+                            return;
+                          }
+                          servers.add(newServer);
+                        }
+
+                        await vm.saveProxyConfig(mcpServers: servers);
+                        Navigator.pop(ctx);
+                        _flash(existing != null ? 'MCP Server 已更新' : 'MCP Server 已添加');
+                      },
+                      child: Text(existing != null ? '更新' : '添加'),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 20),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  void _toggleProxyMcpServer(McpServerConfig server) async {
+    final vm = widget.vm;
+    final servers = List<McpServerConfig>.from(vm.proxyMcpServers);
+    final idx = servers.indexWhere((s) => s.id == server.id);
+    if (idx >= 0) {
+      servers[idx] = server.copyWith(enabled: !server.enabled);
+      await vm.saveProxyConfig(mcpServers: servers);
+    }
+  }
+
+  Future<void> _deleteProxyMcpServer(String serverId) async {
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('确认删除'),
+        content: const Text('确定删除此 MCP Server？'),
+        actions: [
+          TextButton(
+              onPressed: () => Navigator.pop(ctx, false),
+              child: const Text('取消')),
+          FilledButton(
+              onPressed: () => Navigator.pop(ctx, true),
+              child: const Text('删除')),
+        ],
+      ),
+    );
+    if (confirm == true) {
+      final vm = widget.vm;
+      final servers = List<McpServerConfig>.from(vm.proxyMcpServers);
+      servers.removeWhere((s) => s.id == serverId);
+      vm.proxyMcpServerTools.remove(serverId);
+      await vm.saveProxyConfig(mcpServers: servers);
+      _flash('MCP Server 已删除');
+    }
+  }
+
+  Future<void> _loadProxyMcpServerTools(McpServerConfig server) async {
+    final vm = widget.vm;
+    if (vm.proxyMcpServerTools.containsKey(server.id)) {
+      setState(() {
+        vm.proxyMcpServerTools.remove(server.id);
+      });
+      return;
+    }
+
+    setState(() {
+      vm.loadingProxyMcpTools[server.id] = true;
+    });
+
+    try {
+      final result = await _svc.testMcpServer(server);
+      if (result.success) {
+        setState(() {
+          vm.proxyMcpServerTools[server.id] = result.tools;
+        });
+      } else {
+        _flash('获取工具失败: ${result.error ?? '未知错误'}');
+      }
+    } catch (e) {
+      _flash('获取工具失败: $e');
+    } finally {
+      setState(() {
+        vm.loadingProxyMcpTools[server.id] = false;
+      });
+    }
   }
 
   // 知识库

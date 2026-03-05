@@ -47,6 +47,7 @@ class AgentService {
     List<String>? labels,
     double? defaultTemperature,
     String? systemPrompt,
+    List<Map<String, dynamic>>? mcpServers,
   }) async {
     await _api.put('/agents/$agentId/config', body: {
       if (name != null) 'name': name,
@@ -54,6 +55,7 @@ class AgentService {
       if (labels != null) 'labels': labels,
       if (defaultTemperature != null) 'defaultTemperature': defaultTemperature,
       if (systemPrompt != null) 'systemPrompt': systemPrompt,
+      if (mcpServers != null) 'mcpServers': mcpServers,
     });
   }
 

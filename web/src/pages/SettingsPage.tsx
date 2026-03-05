@@ -23,8 +23,18 @@ const emptyDraft = (): ModelProvider => ({
 export default function SettingsPage() {
   const [models, setModels] = useState<ModelProvider[]>([]);
   const [defaultId, setDefaultId] = useState('');
+  // 折叠面板状态
+  const [expandedSections, setExpandedSections] = useState<Set<number>>(new Set([0]));
+  const toggleSection = (idx: number) => {
+    setExpandedSections(prev => {
+      const next = new Set(prev);
+      if (next.has(idx)) next.delete(idx);
+      else next.add(idx);
+      return next;
+    });
+  };
   const [proxyModel, setProxyModel] = useState('');
-  const [proxyTab, setProxyTab] = useState<'basic' | 'prompt' | 'skills' | 'tools' | 'kb'>('basic');
+  const [proxyTab, setProxyTab] = useState<'basic' | 'prompt' | 'skills' | 'tools' | 'kb' | 'mcp'>('basic');
   const [proxyTemperature, setProxyTemperature] = useState(0.7);
   const [proxyClassifyPrompt, setProxyClassifyPrompt] = useState('');
   const [proxyAggregatePrompt, setProxyAggregatePrompt] = useState('');
@@ -69,6 +79,21 @@ export default function SettingsPage() {
   const [proxySavingTool, setProxySavingTool] = useState(false);
   const [proxyHeadersText, setProxyHeadersText] = useState('');
   const [proxyScriptFile, setProxyScriptFile] = useState<File | null>(null);
+
+  // Proxy Agent MCP Server state
+  const [proxyMcpServers, setProxyMcpServers] = useState<api.McpServerConfig[]>([]);
+  const [proxyMcpShowForm, setProxyMcpShowForm] = useState(false);
+  const [proxyMcpEditingServer, setProxyMcpEditingServer] = useState<api.McpServerConfig | null>(null);
+  const [proxyMcpDraft, setProxyMcpDraft] = useState<api.McpServerConfig>({
+    id: '', type: 'local', command: '', args: [], env: {}, enabled: true,
+  });
+  const [proxyMcpEnvText, setProxyMcpEnvText] = useState('');
+  const [proxyMcpHeadersText, setProxyMcpHeadersText] = useState('');
+  const [proxyMcpTestResult, setProxyMcpTestResult] = useState<{ success: boolean; tools?: api.McpTool[]; error?: string } | null>(null);
+  const [proxyMcpTesting, setProxyMcpTesting] = useState(false);
+  const [proxyMcpToolsExpanded, setProxyMcpToolsExpanded] = useState<Record<string, boolean>>({});
+  const [proxyMcpServerTools, setProxyMcpServerTools] = useState<Record<string, api.McpTool[]>>({});
+  const [proxyMcpLoadingTools, setProxyMcpLoadingTools] = useState<Record<string, boolean>>({});
 
   // Global Tools state
   const [globalTools, setGlobalTools] = useState<api.AgentToolConfig[]>([]);
@@ -146,6 +171,7 @@ export default function SettingsPage() {
         setProxyTemperature(proxyCfg.temperature != null ? Number(proxyCfg.temperature) : 0.7);
         setProxyClassifyPrompt(proxyCfg.classifyPrompt || '');
         setProxyAggregatePrompt(proxyCfg.aggregatePrompt || '');
+        setProxyMcpServers(proxyCfg.mcpServers || []);
       }
     } catch (err) {
       console.error(err);
@@ -371,6 +397,7 @@ export default function SettingsPage() {
       mapping.agents['proxy-agent'].temperature = proxyTemperature;
       mapping.agents['proxy-agent'].classifyPrompt = proxyClassifyPrompt.trim() || undefined;
       mapping.agents['proxy-agent'].aggregatePrompt = proxyAggregatePrompt.trim() || undefined;
+      mapping.agents['proxy-agent'].mcpServers = proxyMcpServers.length > 0 ? proxyMcpServers : undefined;
       await api.updateConfig('agent_model_mapping', JSON.stringify(mapping));
       flash('✅ 已保存');
     } catch (err) {
@@ -1029,43 +1056,60 @@ export default function SettingsPage() {
       <h1>设置</h1>
       {toast && <div className={styles.toast}>{toast}</div>}
 
-      <section className={styles.section}>
-        <div className={styles.sectionHeader}>
-          <div>
-            <h2>模型管理</h2>
-            <p className={styles.hint}>
-              添加兼容 OpenAI API 的模型配置。配置好的模型可在 Agent 中选择使用。
-            </p>
+      {/* ==================== 模型管理 ==================== */}
+      <div className={styles.collapsiblePanel}>
+        <div className={styles.panelHeader} onClick={() => toggleSection(0)}>
+          <span className={styles.panelIcon}>🤖</span>
+          <div className={styles.panelTitleArea}>
+            <h3 className={styles.panelTitle}>模型管理</h3>
+            <p className={styles.panelSubtitle}>{models.length} 个模型已配置</p>
           </div>
-          <button className={styles.addBtn} onClick={handleAdd} disabled={editingId !== null}>
-            + 添加模型
-          </button>
+          <span className={`${styles.panelToggle} ${expandedSections.has(0) ? styles.expanded : ''}`}>▼</span>
         </div>
+        <div className={expandedSections.has(0) ? styles.panelBody : styles.panelBodyHidden}>
+          <p className={styles.hint} style={{ marginTop: 0 }}>
+            添加兼容 OpenAI API 的模型配置。配置好的模型可在 Agent 中选择使用。
+          </p>
+          <div style={{ marginBottom: '12px' }}>
+            <button className={styles.addBtn} onClick={handleAdd} disabled={editingId !== null}>
+              + 添加模型
+            </button>
+          </div>
 
-        <div className={styles.modelList}>
-          {/* 新增表单（尚不在列表中） */}
-          {editingId && !models.find((m) => m.id === editingId) && (
-            <div className={styles.modelCard}>{renderEditForm()}</div>
-          )}
+          <div className={styles.modelList}>
+            {/* 新增表单（尚不在列表中） */}
+            {editingId && !models.find((m) => m.id === editingId) && (
+              <div className={styles.modelCard}>{renderEditForm()}</div>
+            )}
 
-          {models.map((m) => (
-            <div
-              key={m.id}
-              className={`${styles.modelCard} ${m.id === defaultId ? styles.isDefault : ''}`}
-            >
-              {editingId === m.id ? renderEditForm() : renderCard(m)}
-            </div>
-          ))}
+            {models.map((m) => (
+              <div
+                key={m.id}
+                className={`${styles.modelCard} ${m.id === defaultId ? styles.isDefault : ''}`}
+              >
+                {editingId === m.id ? renderEditForm() : renderCard(m)}
+              </div>
+            ))}
 
-          {models.length === 0 && !editingId && (
-            <p className={styles.emptyText}>暂未配置模型。点击「添加模型」开始。</p>
-          )}
+            {models.length === 0 && !editingId && (
+              <p className={styles.emptyText}>暂未配置模型。点击「添加模型」开始。</p>
+            )}
+          </div>
         </div>
-      </section>
+      </div>
 
-      <section className={styles.section}>
-        <h2>Proxy Agent 配置</h2>
-        <p className={styles.hint}>
+      {/* ==================== Proxy Agent ==================== */}
+      <div className={styles.collapsiblePanel}>
+        <div className={styles.panelHeader} onClick={() => toggleSection(1)}>
+          <span className={styles.panelIcon}>🔀</span>
+          <div className={styles.panelTitleArea}>
+            <h3 className={styles.panelTitle}>Proxy Agent</h3>
+            <p className={styles.panelSubtitle}>意图识别 / 任务路由配置</p>
+          </div>
+          <span className={`${styles.panelToggle} ${expandedSections.has(1) ? styles.expanded : ''}`}>▼</span>
+        </div>
+        <div className={expandedSections.has(1) ? styles.panelBody : styles.panelBodyHidden}>
+        <p className={styles.hint} style={{ marginTop: 0 }}>
           Proxy Agent 负责意图识别与任务路由，可单独指定使用的模型、提示词、技能、工具和知识库。
         </p>
 
@@ -1075,6 +1119,7 @@ export default function SettingsPage() {
             { id: 'prompt' as const, label: 'Prompt' },
             { id: 'skills' as const, label: 'Skills' },
             { id: 'tools' as const, label: 'Tools' },
+            { id: 'mcp' as const, label: 'MCP Server' },
             { id: 'kb' as const, label: '知识库' },
           ].map((tab) => (
             <button
@@ -1548,22 +1593,496 @@ export default function SettingsPage() {
           </>
         )}
 
+        {/* ===== Tab: MCP Server ===== */}
+        {proxyTab === 'mcp' && (
+          <>
+          <div className={styles.kbActions}>
+            <button className={styles.kbImportBtn} onClick={() => {
+              setProxyMcpEditingServer(null);
+              setProxyMcpDraft({ id: '', type: 'local', enabled: true, command: '', args: [], env: {}, url: '', headers: {} });
+              setProxyMcpEnvText('');
+              setProxyMcpHeadersText('');
+              setProxyMcpTestResult(null);
+              setProxyMcpShowForm(true);
+            }}>
+              ➕ 添加 MCP Server
+            </button>
+          </div>
+
+          {proxyMcpShowForm && (
+            <div className={styles.kbImportForm}>
+              <div className={styles.kbModeTabs}>
+                <button
+                  className={`${styles.kbModeTab} ${proxyMcpDraft.type === 'local' ? styles.kbModeActive : ''}`}
+                  onClick={() => setProxyMcpDraft({ ...proxyMcpDraft, type: 'local' })}
+                >
+                  📦 本地
+                </button>
+                <button
+                  className={`${styles.kbModeTab} ${proxyMcpDraft.type === 'remote' ? styles.kbModeActive : ''}`}
+                  onClick={() => setProxyMcpDraft({ ...proxyMcpDraft, type: 'remote' })}
+                >
+                  🌐 远程
+                </button>
+              </div>
+
+              <label className={styles.field}>
+                <span>Server ID *</span>
+                <input
+                  value={proxyMcpDraft.id}
+                  onChange={(e) => setProxyMcpDraft({ ...proxyMcpDraft, id: e.target.value })}
+                  placeholder="唯一标识，如 my-mcp-server"
+                  className={styles.select}
+                  disabled={!!proxyMcpEditingServer}
+                />
+              </label>
+
+              <label className={styles.switchRow} style={{ marginBottom: '12px' }}>
+                <span>启用</span>
+                <input
+                  type="checkbox"
+                  checked={proxyMcpDraft.enabled !== false}
+                  onChange={(e) => setProxyMcpDraft({ ...proxyMcpDraft, enabled: e.target.checked })}
+                />
+                <span className={`${styles.toggle} ${proxyMcpDraft.enabled !== false ? styles.on : ''}`} />
+              </label>
+
+              {proxyMcpDraft.type === 'local' ? (
+                <>
+                  {/* 安装 MCP 包区域 - 仅新增时显示 */}
+                  {!proxyMcpEditingServer && (
+                    <div style={{
+                      backgroundColor: '#f0f9ff',
+                      border: '1px solid #0ea5e9',
+                      borderRadius: '8px',
+                      padding: '12px',
+                      marginBottom: '16px',
+                    }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: mcpShowInstall ? '12px' : 0 }}>
+                        <span style={{ fontWeight: 500, color: '#0369a1' }}>📦 安装 npm 包（可选）</span>
+                        <button
+                          onClick={() => { setMcpShowInstall(!mcpShowInstall); if (!mcpShowInstall) loadInstalledPackages(); }}
+                          style={{
+                            background: mcpShowInstall ? '#e0f2fe' : '#0ea5e9',
+                            color: mcpShowInstall ? '#0369a1' : 'white',
+                            border: 'none',
+                            padding: '4px 12px',
+                            borderRadius: '4px',
+                            cursor: 'pointer',
+                            fontSize: '12px',
+                          }}
+                        >
+                          {mcpShowInstall ? '收起' : '展开'}
+                        </button>
+                      </div>
+                      {mcpShowInstall && (
+                        <>
+                          {mcpInstallError && (
+                            <div style={{
+                              backgroundColor: '#fee2e2',
+                              border: '1px solid #ef4444',
+                              borderRadius: '6px',
+                              padding: '12px',
+                              marginBottom: '12px',
+                              color: '#dc2626',
+                              fontSize: '13px',
+                            }}>
+                              <strong>❌ 安装失败：</strong>
+                              <pre style={{ margin: '8px 0 0', fontSize: '12px', whiteSpace: 'pre-wrap', maxHeight: '150px', overflow: 'auto' }}>{mcpInstallError}</pre>
+                            </div>
+                          )}
+                          {mcpProbing && (
+                            <div style={{ padding: '8px', color: '#0ea5e9', fontSize: '13px' }}>
+                              ⏳ 正在探测 Tools...
+                            </div>
+                          )}
+                          {mcpProbedTools.length > 0 && mcpProbedPackage && (
+                            <div style={{
+                              marginBottom: '12px',
+                              padding: '8px',
+                              border: '1px solid #10b981',
+                              borderRadius: '6px',
+                              backgroundColor: '#ecfdf5',
+                            }}>
+                              <strong style={{ color: '#059669', fontSize: '13px' }}>
+                                🔧 {mcpProbedPackage} 提供 {mcpProbedTools.length} 个 Tools:
+                              </strong>
+                              <div style={{ marginTop: '8px', display: 'flex', flexWrap: 'wrap', gap: '4px' }}>
+                                {mcpProbedTools.map((t) => (
+                                  <span key={t.name} style={{ background: '#d1fae5', padding: '2px 8px', borderRadius: '12px', fontSize: '11px' }}>
+                                    {t.name}
+                                  </span>
+                                ))}
+                              </div>
+                            </div>
+                          )}
+                          {mcpProbeError && !mcpProbing && (
+                            <div style={{
+                              marginBottom: '12px',
+                              padding: '8px',
+                              border: '1px solid #f59e0b',
+                              borderRadius: '6px',
+                              backgroundColor: '#fffbeb',
+                              color: '#b45309',
+                              fontSize: '12px',
+                            }}>
+                              ⚠️ {mcpProbeError}
+                            </div>
+                          )}
+                          <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                            <input
+                              type="text"
+                              value={mcpInstallPackage}
+                              onChange={(e) => setMcpInstallPackage(e.target.value)}
+                              placeholder="包名，如 @modelcontextprotocol/server-filesystem"
+                              style={{
+                                flex: 1,
+                                padding: '8px 12px',
+                                border: '1px solid #94a3b8',
+                                borderRadius: '6px',
+                                fontSize: '13px',
+                              }}
+                              onKeyDown={(e) => { if (e.key === 'Enter') handleMcpInstallPackage(); }}
+                            />
+                            <button
+                              onClick={handleMcpInstallPackage}
+                              disabled={mcpInstalling || !mcpInstallPackage.trim()}
+                              style={{
+                                background: mcpInstalling ? '#94a3b8' : '#0ea5e9',
+                                color: 'white',
+                                border: 'none',
+                                padding: '8px 16px',
+                                borderRadius: '6px',
+                                cursor: mcpInstalling ? 'not-allowed' : 'pointer',
+                                fontSize: '13px',
+                                whiteSpace: 'nowrap',
+                              }}
+                            >
+                              {mcpInstalling ? '安装中...' : '安装'}
+                            </button>
+                          </div>
+                          <p style={{ fontSize: '11px', color: '#64748b', margin: '4px 0 8px' }}>
+                            常用: @modelcontextprotocol/server-filesystem, server-github, server-puppeteer
+                          </p>
+                          {mcpInstalledPackages.length > 0 && (
+                            <details style={{ fontSize: '12px', color: '#475569' }}>
+                              <summary style={{ cursor: 'pointer' }}>已安装的 MCP 包 ({mcpInstalledPackages.length})</summary>
+                              <ul style={{ margin: '4px 0 0', paddingLeft: '20px' }}>
+                                {mcpInstalledPackages.map(pkg => (
+                                  <li key={pkg.name}>{pkg.name} <span style={{ color: '#888' }}>({pkg.version})</span></li>
+                                ))}
+                              </ul>
+                            </details>
+                          )}
+                        </>
+                      )}
+                    </div>
+                  )}
+
+                  <label className={styles.field}>
+                    <span>启动命令 *</span>
+                    <input
+                      value={proxyMcpDraft.command || ''}
+                      onChange={(e) => setProxyMcpDraft({ ...proxyMcpDraft, command: e.target.value })}
+                      placeholder="如: npx, node, python"
+                      className={styles.select}
+                    />
+                  </label>
+                  <label className={styles.field}>
+                    <span>命令参数（每行一个）</span>
+                    <textarea
+                      value={(proxyMcpDraft.args || []).join('\n')}
+                      onChange={(e) => setProxyMcpDraft({ ...proxyMcpDraft, args: e.target.value.split('\n').filter(Boolean) })}
+                      placeholder={"-y\n@anthropic/mcp-server-xxx"}
+                      rows={3}
+                      className={styles.kbTextarea}
+                    />
+                  </label>
+                  <label className={styles.field}>
+                    <span>环境变量（KEY=VALUE 每行一个）</span>
+                    <textarea
+                      value={proxyMcpEnvText}
+                      onChange={(e) => setProxyMcpEnvText(e.target.value)}
+                      placeholder={"API_KEY=xxx\nDEBUG=true"}
+                      rows={2}
+                      className={styles.kbTextarea}
+                    />
+                  </label>
+                </>
+              ) : (
+                <>
+                  <label className={styles.field}>
+                    <span>远程 URL *</span>
+                    <input
+                      value={proxyMcpDraft.url || ''}
+                      onChange={(e) => setProxyMcpDraft({ ...proxyMcpDraft, url: e.target.value })}
+                      placeholder="https://example.com/mcp"
+                      className={styles.select}
+                    />
+                  </label>
+                  <label className={styles.field}>
+                    <span>请求头（KEY: VALUE 每行一个）</span>
+                    <textarea
+                      value={proxyMcpHeadersText}
+                      onChange={(e) => setProxyMcpHeadersText(e.target.value)}
+                      placeholder={"Authorization: Bearer xxx"}
+                      rows={2}
+                      className={styles.kbTextarea}
+                    />
+                  </label>
+                </>
+              )}
+
+              {/* 测试结果 */}
+              {proxyMcpTestResult && (
+                <div style={{
+                  padding: '8px 12px',
+                  marginBottom: '12px',
+                  borderRadius: '6px',
+                  backgroundColor: proxyMcpTestResult.success ? '#ecfdf5' : '#fef2f2',
+                  border: `1px solid ${proxyMcpTestResult.success ? '#10b981' : '#ef4444'}`,
+                }}>
+                  {proxyMcpTestResult.success ? (
+                    <span style={{ color: '#059669' }}>
+                      ✅ 连接成功，发现 {proxyMcpTestResult.tools?.length || 0} 个工具
+                    </span>
+                  ) : (
+                    <span style={{ color: '#dc2626' }}>
+                      ❌ 连接失败: {proxyMcpTestResult.error}
+                    </span>
+                  )}
+                </div>
+              )}
+
+              <div className={styles.kbImportActions}>
+                <button
+                  className={styles.saveBtn}
+                  style={{ backgroundColor: '#6366f1' }}
+                  onClick={async () => {
+                    setProxyMcpTesting(true);
+                    setProxyMcpTestResult(null);
+                    try {
+                      // 解析 env / headers
+                      const env: Record<string, string> = {};
+                      proxyMcpEnvText.split('\n').filter(Boolean).forEach(line => {
+                        const idx = line.indexOf('=');
+                        if (idx > 0) env[line.slice(0, idx).trim()] = line.slice(idx + 1).trim();
+                      });
+                      const headers: Record<string, string> = {};
+                      proxyMcpHeadersText.split('\n').filter(Boolean).forEach(line => {
+                        const idx = line.indexOf(':');
+                        if (idx > 0) headers[line.slice(0, idx).trim()] = line.slice(idx + 1).trim();
+                      });
+                      const testConfig: api.McpServerConfig = {
+                        ...proxyMcpDraft,
+                        env: proxyMcpDraft.type === 'local' ? env : undefined,
+                        headers: proxyMcpDraft.type === 'remote' ? headers : undefined,
+                      };
+                      const result = await api.testMcpServer(testConfig);
+                      setProxyMcpTestResult({ success: result.success, tools: result.tools, error: result.error });
+                    } catch (err) {
+                      setProxyMcpTestResult({ success: false, error: err instanceof Error ? err.message : String(err) });
+                    } finally {
+                      setProxyMcpTesting(false);
+                    }
+                  }}
+                  disabled={proxyMcpTesting || !proxyMcpDraft.id || (proxyMcpDraft.type === 'local' ? !proxyMcpDraft.command : !proxyMcpDraft.url)}
+                >
+                  {proxyMcpTesting ? '测试中…' : '🔍 测试连接'}
+                </button>
+                <button
+                  className={styles.saveBtn}
+                  onClick={() => {
+                    // 解析 env / headers
+                    const env: Record<string, string> = {};
+                    proxyMcpEnvText.split('\n').filter(Boolean).forEach(line => {
+                      const idx = line.indexOf('=');
+                      if (idx > 0) env[line.slice(0, idx).trim()] = line.slice(idx + 1).trim();
+                    });
+                    const headers: Record<string, string> = {};
+                    proxyMcpHeadersText.split('\n').filter(Boolean).forEach(line => {
+                      const idx = line.indexOf(':');
+                      if (idx > 0) headers[line.slice(0, idx).trim()] = line.slice(idx + 1).trim();
+                    });
+                    const newServer: api.McpServerConfig = {
+                      ...proxyMcpDraft,
+                      env: proxyMcpDraft.type === 'local' ? env : undefined,
+                      headers: proxyMcpDraft.type === 'remote' ? headers : undefined,
+                    };
+                    if (proxyMcpEditingServer) {
+                      setProxyMcpServers(proxyMcpServers.map(s => s.id === proxyMcpEditingServer.id ? newServer : s));
+                    } else {
+                      if (proxyMcpServers.some(s => s.id === newServer.id)) {
+                        flash('Server ID 已存在');
+                        return;
+                      }
+                      setProxyMcpServers([...proxyMcpServers, newServer]);
+                    }
+                    setProxyMcpShowForm(false);
+                    // 自动保存配置
+                    handleProxyConfigSave();
+                  }}
+                  disabled={!proxyMcpDraft.id || (proxyMcpDraft.type === 'local' ? !proxyMcpDraft.command : !proxyMcpDraft.url)}
+                >
+                  {proxyMcpEditingServer ? '更新' : '添加'}
+                </button>
+                <button className={styles.cancelBtn} onClick={() => setProxyMcpShowForm(false)}>取消</button>
+              </div>
+            </div>
+          )}
+
+          <p className={styles.hint}>此处配置的 MCP Server 仅供 Proxy Agent 使用。</p>
+
+          {proxyMcpServers.length === 0 ? (
+            <p className={styles.hint}>暂无 MCP Server 配置。</p>
+          ) : (
+            <div className={styles.kbDocList}>
+              {proxyMcpServers.map((server) => (
+                <div key={server.id} className={styles.skillItem} style={{ flexWrap: 'wrap' }}>
+                  <div className={styles.kbDocInfo}>
+                    <span className={styles.kbDocTitle}>
+                      {server.type === 'remote' ? '🌐' : '📦'} {server.id}
+                    </span>
+                    <span className={styles.kbDocChunks}>
+                      {server.type === 'remote'
+                        ? server.url
+                        : `${server.command} ${(server.args || []).slice(0, 2).join(' ')}`}
+                      {(server.args || []).length > 2 && '...'}
+                    </span>
+                  </div>
+                  <div className={styles.skillActions}>
+                    <button
+                      className={`${styles.toolToggleBtn} ${server.enabled !== false ? styles.toolEnabled : ''}`}
+                      onClick={() => {
+                        const updated = proxyMcpServers.map(s => s.id === server.id ? { ...s, enabled: !s.enabled } : s);
+                        setProxyMcpServers(updated);
+                        // 自动保存
+                        setTimeout(() => handleProxyConfigSave(), 0);
+                      }}
+                      title={server.enabled !== false ? '已启用' : '已禁用'}
+                    >
+                      {server.enabled !== false ? '✅' : '⚪'}
+                    </button>
+                    <button
+                      className={styles.skillEditBtn}
+                      onClick={async () => {
+                        if (proxyMcpToolsExpanded[server.id]) {
+                          setProxyMcpToolsExpanded({ ...proxyMcpToolsExpanded, [server.id]: false });
+                          return;
+                        }
+                        setProxyMcpLoadingTools({ ...proxyMcpLoadingTools, [server.id]: true });
+                        try {
+                          const result = await api.testMcpServer(server);
+                          if (result.success && result.tools) {
+                            setProxyMcpServerTools({ ...proxyMcpServerTools, [server.id]: result.tools });
+                            setProxyMcpToolsExpanded({ ...proxyMcpToolsExpanded, [server.id]: true });
+                          } else {
+                            flash(`无法获取工具: ${result.error || '未知错误'}`);
+                          }
+                        } catch (err) {
+                          flash(`获取工具失败: ${err instanceof Error ? err.message : String(err)}`);
+                        } finally {
+                          setProxyMcpLoadingTools({ ...proxyMcpLoadingTools, [server.id]: false });
+                        }
+                      }}
+                      title="查看工具"
+                      disabled={server.enabled === false || proxyMcpLoadingTools[server.id]}
+                    >
+                      {proxyMcpLoadingTools[server.id] ? '⏳' : '🛠️'}
+                    </button>
+                    <button
+                      className={styles.skillEditBtn}
+                      onClick={() => {
+                        setProxyMcpEditingServer(server);
+                        setProxyMcpDraft(server);
+                        setProxyMcpEnvText(Object.entries(server.env || {}).map(([k, v]) => `${k}=${v}`).join('\n'));
+                        setProxyMcpHeadersText(Object.entries(server.headers || {}).map(([k, v]) => `${k}: ${v}`).join('\n'));
+                        setProxyMcpTestResult(null);
+                        setProxyMcpShowForm(true);
+                      }}
+                      title="编辑"
+                    >
+                      ✏️
+                    </button>
+                    <button
+                      className={styles.kbDocDelete}
+                      onClick={() => {
+                        const updated = proxyMcpServers.filter(s => s.id !== server.id);
+                        setProxyMcpServers(updated);
+                        // 自动保存
+                        setTimeout(() => handleProxyConfigSave(), 0);
+                      }}
+                      title="删除"
+                    >
+                      ×
+                    </button>
+                  </div>
+                  {/* 工具列表 */}
+                  {proxyMcpServerTools[server.id] && proxyMcpServerTools[server.id].length > 0 && proxyMcpToolsExpanded[server.id] && (
+                    <div style={{
+                      width: '100%',
+                      marginTop: '8px',
+                      padding: '8px 12px',
+                      backgroundColor: '#f8fafc',
+                      borderRadius: '6px',
+                      border: '1px solid #e2e8f0',
+                    }}>
+                      <div
+                        style={{ cursor: 'pointer', fontWeight: 500, marginBottom: '6px' }}
+                        onClick={() => setProxyMcpToolsExpanded({ ...proxyMcpToolsExpanded, [server.id]: false })}
+                      >
+                        提供的工具 ({proxyMcpServerTools[server.id].length}) ▼
+                      </div>
+                      <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
+                        {proxyMcpServerTools[server.id].map((tool) => (
+                          <span
+                            key={tool.name}
+                            title={tool.description || tool.name}
+                            style={{
+                              display: 'inline-block',
+                              padding: '2px 8px',
+                              backgroundColor: '#e0f2fe',
+                              borderRadius: '12px',
+                              fontSize: '12px',
+                              color: '#0369a1',
+                            }}
+                          >
+                            {tool.name}
+                          </span>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              ))}
+            </div>
+          )}
+          </>
+        )}
+
         </div>{/* end proxyTabPanel */}
-      </section>
+        </div>{/* end panelBody */}
+      </div>{/* end collapsiblePanel */}
 
       {/* ==================== 全局Tools ==================== */}
-      <section className={styles.section}>
-        <div className={styles.sectionHeader}>
-          <div>
-            <h2>全局Tools</h2>
-            <p className={styles.hint}>
-              全局Tools可被所有 Agent 使用。适合添加天气查询、搜索等通用能力。
-            </p>
+      <div className={styles.collapsiblePanel}>
+        <div className={styles.panelHeader} onClick={() => toggleSection(2)}>
+          <span className={styles.panelIcon}>🛠️</span>
+          <div className={styles.panelTitleArea}>
+            <h3 className={styles.panelTitle}>全局Tools</h3>
+            <p className={styles.panelSubtitle}>{globalTools.length} 个工具</p>
           </div>
-          <button className={styles.addBtn} onClick={openGlobalToolCreate}>
-            + 添加全局Tool
-          </button>
+          <span className={`${styles.panelToggle} ${expandedSections.has(2) ? styles.expanded : ''}`}>▼</span>
         </div>
+        <div className={expandedSections.has(2) ? styles.panelBody : styles.panelBodyHidden}>
+          <p className={styles.hint} style={{ marginTop: 0 }}>
+            全局Tools可被所有 Agent 使用。适合添加天气查询、搜索等通用能力。
+          </p>
+          <div style={{ marginBottom: '12px' }}>
+            <button className={styles.addBtn} onClick={openGlobalToolCreate}>
+              + 添加全局Tool
+            </button>
+          </div>
 
         {globalShowToolForm && (
           <div className={styles.kbImportForm}>
@@ -1742,21 +2261,28 @@ export default function SettingsPage() {
             ))}
           </div>
         )}
-      </section>
+        </div>{/* end panelBody */}
+      </div>{/* end collapsiblePanel */}
 
-      {/* ==================== MCP Server ==================== */}
-      <section className={styles.section}>
-        <div className={styles.sectionHeader}>
-          <div>
-            <h2>MCP Server</h2>
-            <p className={styles.hint}>
-              通过 MCP (Model Context Protocol) 连接外部工具服务器，如文件系统、数据库等。
-            </p>
+      {/* ==================== 全局MCP Server ==================== */}
+      <div className={styles.collapsiblePanel}>
+        <div className={styles.panelHeader} onClick={() => toggleSection(3)}>
+          <span className={styles.panelIcon}>🔌</span>
+          <div className={styles.panelTitleArea}>
+            <h3 className={styles.panelTitle}>全局MCP Server</h3>
+            <p className={styles.panelSubtitle}>{mcpServers.length} 个服务器</p>
           </div>
-          <button className={styles.addBtn} onClick={openMcpServerCreate}>
-            + 添加 MCP Server
-          </button>
+          <span className={`${styles.panelToggle} ${expandedSections.has(3) ? styles.expanded : ''}`}>▼</span>
         </div>
+        <div className={expandedSections.has(3) ? styles.panelBody : styles.panelBodyHidden}>
+          <p className={styles.hint} style={{ marginTop: 0 }}>
+            通过 MCP (Model Context Protocol) 连接外部工具服务器。全局MCP Server可被所有Agent使用。
+          </p>
+          <div style={{ marginBottom: '12px' }}>
+            <button className={styles.addBtn} onClick={openMcpServerCreate}>
+              + 添加 MCP Server
+            </button>
+          </div>
 
         {mcpShowForm && (
           <div className={styles.kbImportForm}>
@@ -1772,23 +2298,39 @@ export default function SettingsPage() {
                 disabled={!!mcpEditingServer}
               />
             </label>
-            <label className={styles.field}>
-              <span>服务器类型</span>
-              <select
-                value={mcpDraft.type || 'local'}
-                onChange={(e) => setMcpDraft({ ...mcpDraft, type: e.target.value as api.McpServerType })}
-                className={styles.input}
+
+            <div className={styles.kbModeTabs}>
+              <button
+                className={`${styles.kbModeTab} ${(mcpDraft.type || 'local') === 'local' ? styles.kbModeActive : ''}`}
+                onClick={() => setMcpDraft({ ...mcpDraft, type: 'local' })}
                 disabled={!!mcpEditingServer}
               >
-                <option value="local">📦 本地 MCP Server（通过 npm 包启动进程）</option>
-                <option value="remote">🌐 远程 MCP Server（通过 SSE/HTTP 连接）</option>
-              </select>
+                📦 本地
+              </button>
+              <button
+                className={`${styles.kbModeTab} ${mcpDraft.type === 'remote' ? styles.kbModeActive : ''}`}
+                onClick={() => setMcpDraft({ ...mcpDraft, type: 'remote' })}
+                disabled={!!mcpEditingServer}
+              >
+                🌐 远程
+              </button>
+            </div>
+
+            <label className={styles.switchRow} style={{ marginBottom: '12px' }}>
+              <span>启用</span>
+              <input
+                type="checkbox"
+                checked={mcpDraft.enabled !== false}
+                onChange={(e) => setMcpDraft({ ...mcpDraft, enabled: e.target.checked })}
+              />
+              <span className={`${styles.toggle} ${mcpDraft.enabled !== false ? styles.on : ''}`} />
             </label>
 
             {/* 本地 MCP Server 配置 */}
             {(mcpDraft.type || 'local') === 'local' && (
               <>
-                {/* 安装 MCP 包区域 */}
+                {/* 安装 MCP 包区域 - 仅新增时显示 */}
+                {!mcpEditingServer && (
                 <div style={{
                   backgroundColor: '#f0f9ff',
                   border: '1px solid #0ea5e9',
@@ -1964,6 +2506,7 @@ export default function SettingsPage() {
                     </>
                   )}
                 </div>
+                )}
 
                 <label className={styles.field}>
                   <span>启动命令 *</span>
@@ -2245,7 +2788,8 @@ export default function SettingsPage() {
             ))}
           </div>
         )}
-      </section>
+        </div>{/* end panelBody */}
+      </div>{/* end collapsiblePanel */}
     </div>{/* end pageInner */}
     </div>
   );

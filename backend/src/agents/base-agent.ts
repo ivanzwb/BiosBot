@@ -22,6 +22,7 @@ import { createRagTool, buildRagPrompt } from './rag-tool';
 import { hasKnowledge } from './rag-service';
 import { loadAgentTools } from './tool-loader';
 import { loadGlobalTools, loadMcpTools } from './global-tool-loader';
+import { McpServerConfig, createMcpTools } from './mcp-client';
 import logger from '../infra/logger/logger';
 
 // ============================================================
@@ -223,6 +224,8 @@ export interface AgentRunOptions {
   extraTools?: DynamicStructuredTool[];
   /** 短期记忆：对话历史消息（会被截断并转换为 LangChain 消息插入 LLM 上下文） */
   history?: MessageRecord[];
+  /** Agent 专属的 MCP Server 配置（加载该 Agent 专用的 MCP 工具） */
+  mcpServers?: McpServerConfig[];
 }
 
 /**
@@ -245,6 +248,7 @@ export async function runAgent(options: AgentRunOptions): Promise<string> {
     maxTokens,
     extraTools: staticExtraTools = [],
     history = [],
+    mcpServers = [],
   } = options;
 
   // 1. 读取模型配置
@@ -271,10 +275,23 @@ export async function runAgent(options: AgentRunOptions): Promise<string> {
   // 5. 加载全局Tools（所有 Agent 共享）
   const { tools: globalTools } = loadGlobalTools();
 
-  // 6. 加载 MCP Server 提供的工具
-  const mcpTools = await loadMcpTools();
+  // 6. 加载全局 MCP Server 提供的工具
+  const globalMcpTools = await loadMcpTools();
 
-  const extraTools: DynamicStructuredTool[] = [...staticExtraTools, ...rag.tools, ...agentTools, ...globalTools, ...mcpTools];
+  // 7. 加载 Agent 专属的 MCP Server 提供的工具
+  const agentMcpTools: DynamicStructuredTool[] = [];
+  for (const cfg of mcpServers) {
+    if (cfg.enabled === false) continue;
+    try {
+      const tools = await createMcpTools(cfg, undefined, `[MCP:${cfg.id}] `);
+      agentMcpTools.push(...tools);
+      logger.info(`base-agent: loaded ${tools.length} tools from Agent MCP server "${cfg.id}"`);
+    } catch (err) {
+      logger.error(`base-agent: failed to load tools from Agent MCP server "${cfg.id}"`, { error: err });
+    }
+  }
+
+  const extraTools: DynamicStructuredTool[] = [...staticExtraTools, ...rag.tools, ...agentTools, ...globalTools, ...globalMcpTools, ...agentMcpTools];
 
   // 调试日志：显示加载的工具
   logger.info(`base-agent: tools loaded for "${agentId}"`, {
@@ -282,15 +299,16 @@ export async function runAgent(options: AgentRunOptions): Promise<string> {
     ragTools: rag.tools.length,
     agentTools: agentTools.length,
     globalTools: globalTools.length,
-    mcpTools: mcpTools.length,
+    globalMcpTools: globalMcpTools.length,
+    agentMcpTools: agentMcpTools.length,
     totalExtraTools: extraTools.length,
-    mcpToolNames: mcpTools.map(t => t.name),
+    mcpToolNames: [...globalMcpTools, ...agentMcpTools].map(t => t.name),
   });
 
-  // 7. 转换历史消息为 LangChain 格式（短期记忆）
+  // 8. 转换历史消息为 LangChain 格式（短期记忆）
   const historyMessages = convertHistoryToMessages(history);
 
-  // 8. 调用 runWithSkills
+  // 9. 调用 runWithSkills
   return runWithSkills({
     chat,
     skills,

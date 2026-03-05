@@ -17,6 +17,7 @@ import logger from '../infra/logger/logger';
 import { loadSkills } from './skill-loader';
 import { loadAgentConfig, createDomainAgent, DomainAgentConfig } from './domain-agent';
 import { getConfigJSON } from '../models/config.model';
+import { McpServerConfig } from './mcp-client';
 
 /** DB 中存储的 Agent 配置结构 */
 export interface DbAgentConfig {
@@ -26,6 +27,8 @@ export interface DbAgentConfig {
   systemPrompt?: string;
   labels?: string[];
   defaultTemperature?: number;
+  /** Agent 专属的 MCP Server 配置（不与其他 Agent 共享） */
+  mcpServers?: McpServerConfig[];
 }
 
 /** 内置 Agent 目录（backend/agents/）— 存放纯配置驱动的 Domain Agent */
@@ -166,6 +169,7 @@ function loadDbAgents(): DomainAgent[] {
         labels: cfg.labels,
         defaultTemperature: cfg.defaultTemperature,
         agentDir,
+        mcpServers: cfg.mcpServers,
       };
 
       const agent = createDomainAgent(domainConfig);

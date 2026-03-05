@@ -24,13 +24,16 @@ class SettingsViewModel extends ChangeNotifier {
   String _proxyAggregatePrompt = '';
   String get proxyAggregatePrompt => _proxyAggregatePrompt;
 
-  // Proxy Skills / Tools / KB
+  // Proxy Skills / Tools / KB / MCP
   List<Skill> proxySkills = [];
   List<AgentTool> proxyTools = [];
   List<DocumentSummary> proxyDocs = [];
+  List<McpServerConfig> proxyMcpServers = [];
   bool loadingSkills = false;
   bool loadingTools = false;
   bool loadingDocs = false;
+  Map<String, List<McpToolSimple>> proxyMcpServerTools = {};
+  Map<String, bool> loadingProxyMcpTools = {};
 
   // 全局Tools
   List<AgentTool> globalTools = [];
@@ -111,6 +114,15 @@ class SettingsViewModel extends ChangeNotifier {
               proxyCfg['classifyPrompt']?.toString() ?? '';
           _proxyAggregatePrompt =
               proxyCfg['aggregatePrompt']?.toString() ?? '';
+          // Load proxy MCP servers
+          final mcpList = proxyCfg['mcpServers'] as List?;
+          if (mcpList != null) {
+            proxyMcpServers = mcpList
+                .map((e) => McpServerConfig.fromJson(e as Map<String, dynamic>))
+                .toList();
+          } else {
+            proxyMcpServers = [];
+          }
         }
       } catch (_) {}
 
@@ -229,6 +241,7 @@ class SettingsViewModel extends ChangeNotifier {
     double? temperature,
     String? classifyPrompt,
     String? aggregatePrompt,
+    List<McpServerConfig>? mcpServers,
   }) async {
     try {
       _agentModelMapping['agents'] ??= {};
@@ -263,6 +276,14 @@ class SettingsViewModel extends ChangeNotifier {
           proxy['aggregatePrompt'] = aggregatePrompt.trim();
         }
         _proxyAggregatePrompt = aggregatePrompt;
+      }
+      if (mcpServers != null) {
+        if (mcpServers.isEmpty) {
+          proxy.remove('mcpServers');
+        } else {
+          proxy['mcpServers'] = mcpServers.map((s) => s.toJson()).toList();
+        }
+        proxyMcpServers = mcpServers;
       }
 
       await _svc.updateConfig(

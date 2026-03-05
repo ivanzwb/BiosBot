@@ -9,6 +9,7 @@ class Agent {
   final double? defaultTemperature;
   final String? systemPrompt;
   final String? source; // 'db' | 'file'
+  final List<McpServerConfig> mcpServers;
 
   Agent({
     required this.id,
@@ -20,6 +21,7 @@ class Agent {
     this.defaultTemperature,
     this.systemPrompt,
     this.source,
+    this.mcpServers = const [],
   });
 
   factory Agent.fromJson(Map<String, dynamic> json) {
@@ -40,6 +42,9 @@ class Agent {
       defaultTemperature: (json['defaultTemperature'] as num?)?.toDouble(),
       systemPrompt: json['systemPrompt'] as String?,
       source: json['source'] as String?,
+      mcpServers: (json['mcpServers'] as List<dynamic>?)
+          ?.map((e) => McpServerConfig.fromJson(e as Map<String, dynamic>))
+          .toList() ?? [],
     );
   }
 }

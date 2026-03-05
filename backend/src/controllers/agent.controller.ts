@@ -163,6 +163,7 @@ export function listAgents(_req: Request, res: Response, next: NextFunction): vo
         defaultTemperature,
         systemPrompt,
         source,
+        mcpServers: dbDomainCfg?.mcpServers || [],
       };
     });
 
@@ -201,13 +202,13 @@ export function refreshAgents(_req: Request, res: Response, next: NextFunction):
 /**
  * PUT /api/agents/:id/config
  *
- * 更新 Domain Agent 的配置（name, description, labels, defaultTemperature, systemPrompt）。
+ * 更新 Domain Agent 的配置（name, description, labels, defaultTemperature, systemPrompt, mcpServers）。
  * DB Agent → 更新 domain_agents 配置；文件系统 Agent → 写回 agent.json 和 prompt.md。
  */
 export function updateAgentConfig(req: Request, res: Response, next: NextFunction): void {
   try {
     const agentId = req.params.id as string;
-    const { name, description, labels, defaultTemperature, systemPrompt } = req.body;
+    const { name, description, labels, defaultTemperature, systemPrompt, mcpServers } = req.body;
 
     // 检查是否是 DB Agent
     const domainAgents = getConfigJSON<DbAgentConfig[]>('domain_agents') || [];
@@ -220,6 +221,7 @@ export function updateAgentConfig(req: Request, res: Response, next: NextFunctio
       if (labels !== undefined) domainAgents[dbIdx].labels = labels;
       if (defaultTemperature !== undefined) domainAgents[dbIdx].defaultTemperature = defaultTemperature;
       if (systemPrompt !== undefined) domainAgents[dbIdx].systemPrompt = systemPrompt;
+      if (mcpServers !== undefined) domainAgents[dbIdx].mcpServers = mcpServers;
       upsertConfig('domain_agents', JSON.stringify(domainAgents));
     } else {
       // 文件系统 Agent：写回 agent.json + prompt.md
@@ -247,6 +249,23 @@ export function updateAgentConfig(req: Request, res: Response, next: NextFunctio
 
       if (systemPrompt !== undefined) {
         fs.writeFileSync(promptPath, systemPrompt.trim() + '\n', 'utf-8');
+      }
+
+      // 对于文件系统 Agent，mcpServers 存储在 domain_agents 中（创建或更新一条记录）
+      if (mcpServers !== undefined) {
+        const existingIdx = domainAgents.findIndex(a => a.id === agentId);
+        if (existingIdx >= 0) {
+          domainAgents[existingIdx].mcpServers = mcpServers;
+        } else if (mcpServers.length > 0) {
+          // 创建一条最小记录，只存 mcpServers
+          domainAgents.push({
+            id: agentId,
+            name: agentJson.name || agent.name,
+            description: agentJson.description || agent.description || '',
+            mcpServers,
+          });
+        }
+        upsertConfig('domain_agents', JSON.stringify(domainAgents));
       }
     }
 

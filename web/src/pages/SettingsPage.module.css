@@ -22,6 +22,73 @@
   margin-bottom: 16px;
 }
 
+/* ====== 折叠面板 ====== */
+.collapsiblePanel {
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius);
+  margin-bottom: 12px;
+  background: var(--color-surface);
+  overflow: hidden;
+}
+
+.panelHeader {
+  display: flex;
+  align-items: center;
+  padding: 14px 16px;
+  cursor: pointer;
+  user-select: none;
+  gap: 12px;
+  transition: background 0.15s;
+}
+
+.panelHeader:hover {
+  background: var(--color-bg);
+}
+
+.panelIcon {
+  font-size: 20px;
+  width: 28px;
+  text-align: center;
+  flex-shrink: 0;
+}
+
+.panelTitleArea {
+  flex: 1;
+  min-width: 0;
+}
+
+.panelTitle {
+  font-size: 15px;
+  font-weight: 600;
+  margin: 0;
+  color: var(--color-text);
+}
+
+.panelSubtitle {
+  font-size: 12px;
+  color: var(--color-text-secondary);
+  margin-top: 2px;
+}
+
+.panelToggle {
+  font-size: 12px;
+  color: var(--color-text-secondary);
+  transition: transform 0.2s;
+}
+
+.panelToggle.expanded {
+  transform: rotate(180deg);
+}
+
+.panelBody {
+  border-top: 1px solid var(--color-border);
+  padding: 16px;
+}
+
+.panelBodyHidden {
+  display: none;
+}
+
 .section {
   margin-bottom: 28px;
 }
@@ -684,4 +751,12 @@
   color: var(--color-primary);
   border-bottom-color: var(--color-primary);
   font-weight: 600;
+}
+
+.proxyTabPanel {
+  flex: 1;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
 }

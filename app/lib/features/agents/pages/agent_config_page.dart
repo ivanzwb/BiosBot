@@ -46,12 +46,17 @@ class _AgentConfigPageState extends State<AgentConfigPage>
   List<DocumentSummary> _docs = [];
   bool _loadingDocs = true;
 
+  // MCP Server
+  List<McpServerConfig> _mcpServers = [];
+  Map<String, List<McpToolSimple>> _mcpServerTools = {};
+  Map<String, bool> _loadingMcpTools = {};
+
   bool _saving = false;
 
   @override
   void initState() {
     super.initState();
-    _tabCtrl = TabController(length: 5, vsync: this);
+    _tabCtrl = TabController(length: 6, vsync: this);
     _loadData();
   }
 
@@ -76,6 +81,7 @@ class _AgentConfigPageState extends State<AgentConfigPage>
       _temperature = _agent!.defaultTemperature ?? 0.5;
       _promptCtrl.text = _agent!.systemPrompt ?? '';
       _enabled = _agent!.enabled;
+      _mcpServers = List.from(_agent!.mcpServers);
 
       // Load model mapping
       try {
@@ -197,6 +203,7 @@ class _AgentConfigPageState extends State<AgentConfigPage>
             Tab(text: 'Prompt'),
             Tab(text: 'Skills'),
             Tab(text: 'Tools'),
+            Tab(text: 'MCP Server'),
             Tab(text: '知识库'),
           ],
         ),
@@ -210,6 +217,7 @@ class _AgentConfigPageState extends State<AgentConfigPage>
                 _buildPromptTab(),
                 _buildSkillsTab(),
                 _buildToolsTab(),
+                _buildMcpTab(),
                 _buildKbTab(),
               ],
             ),
@@ -1166,6 +1174,613 @@ class _AgentConfigPageState extends State<AgentConfigPage>
       } catch (e) {
         _flash('清空失败: $e');
       }
+    }
+  }
+
+  // ======================== MCP Server Tab ========================
+  Widget _buildMcpTab() {
+    return Column(
+      children: [
+        Padding(
+          padding: const EdgeInsets.fromLTRB(20, 16, 20, 8),
+          child: Row(
+            children: [
+              Text('MCP Server (${_mcpServers.length})',
+                  style: Theme.of(context).textTheme.titleMedium),
+              const Spacer(),
+              FilledButton.icon(
+                icon: const Icon(Icons.add, size: 18),
+                label: const Text('添加'),
+                onPressed: () => _showMcpServerEditor(null),
+              ),
+            ],
+          ),
+        ),
+        const Padding(
+          padding: EdgeInsets.symmetric(horizontal: 20),
+          child: Text(
+            '此处配置的 MCP Server 仅供该 Agent 使用。',
+            style: TextStyle(color: Colors.grey, fontSize: 13),
+          ),
+        ),
+        const SizedBox(height: 8),
+        Expanded(
+          child: _mcpServers.isEmpty
+              ? const Center(child: Text('暂无 MCP Server 配置'))
+              : ListView.builder(
+                  padding: const EdgeInsets.symmetric(horizontal: 16),
+                  itemCount: _mcpServers.length,
+                  itemBuilder: (context, i) {
+                    final server = _mcpServers[i];
+                    final isExpanded = _mcpServerTools.containsKey(server.id);
+                    final tools = _mcpServerTools[server.id] ?? [];
+                    final loading = _loadingMcpTools[server.id] ?? false;
+
+                    return Card(
+                      child: Column(
+                        children: [
+                          ListTile(
+                            leading: Icon(
+                              server.isRemote ? Icons.cloud : Icons.storage,
+                              color: server.enabled
+                                  ? Theme.of(context).colorScheme.primary
+                                  : Colors.grey,
+                            ),
+                            title: Row(
+                              children: [
+                                Expanded(child: Text(server.id)),
+                                if (!server.enabled)
+                                  Container(
+                                    padding: const EdgeInsets.symmetric(
+                                        horizontal: 6, vertical: 2),
+                                    decoration: BoxDecoration(
+                                      color: Colors.grey[200],
+                                      borderRadius: BorderRadius.circular(4),
+                                    ),
+                                    child: const Text('已禁用',
+                                        style: TextStyle(fontSize: 10)),
+                                  ),
+                              ],
+                            ),
+                            subtitle: Text(
+                              server.isRemote
+                                  ? server.url ?? ''
+                                  : '${server.command ?? ''} ${server.args.take(2).join(' ')}${server.args.length > 2 ? '...' : ''}',
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                            trailing: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                // 查看工具
+                                IconButton(
+                                  icon: loading
+                                      ? const SizedBox(
+                                          width: 16,
+                                          height: 16,
+                                          child: CircularProgressIndicator(
+                                              strokeWidth: 2),
+                                        )
+                                      : const Icon(Icons.build, size: 20),
+                                  onPressed: server.enabled
+                                      ? () => _loadMcpServerTools(server)
+                                      : null,
+                                  tooltip: '查看工具',
+                                ),
+                                // 启用/禁用
+                                Switch(
+                                  value: server.enabled,
+                                  onChanged: (_) => _toggleMcpServer(server),
+                                ),
+                                // 编辑
+                                IconButton(
+                                  icon: const Icon(Icons.edit, size: 20),
+                                  onPressed: () => _showMcpServerEditor(server),
+                                ),
+                                // 删除
+                                IconButton(
+                                  icon: Icon(Icons.delete_outline,
+                                      size: 20,
+                                      color: Theme.of(context).colorScheme.error),
+                                  onPressed: () => _deleteMcpServer(server.id),
+                                ),
+                              ],
+                            ),
+                          ),
+                          // 工具列表
+                          if (isExpanded && tools.isNotEmpty)
+                            Container(
+                              width: double.infinity,
+                              padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
+                              child: Wrap(
+                                spacing: 6,
+                                runSpacing: 4,
+                                children: tools.map((tool) => Chip(
+                                  label: Text(tool.name, style: const TextStyle(fontSize: 12)),
+                                  backgroundColor: Theme.of(context).colorScheme.primaryContainer,
+                                  visualDensity: VisualDensity.compact,
+                                )).toList(),
+                              ),
+                            ),
+                        ],
+                      ),
+                    );
+                  },
+                ),
+        ),
+      ],
+    );
+  }
+
+  void _showMcpServerEditor(McpServerConfig? existing) {
+    final idCtrl = TextEditingController(text: existing?.id ?? '');
+    String type = existing?.type ?? 'local';
+    bool enabled = existing?.enabled ?? true;
+    final commandCtrl = TextEditingController(text: existing?.command ?? '');
+    final argsCtrl = TextEditingController(text: existing?.args.join('\n') ?? '');
+    final envCtrl = TextEditingController(
+        text: existing?.env.entries.map((e) => '${e.key}=${e.value}').join('\n') ?? '');
+    final urlCtrl = TextEditingController(text: existing?.url ?? '');
+    final headersCtrl = TextEditingController(
+        text: existing?.headers.entries.map((e) => '${e.key}: ${e.value}').join('\n') ?? '');
+
+    // npm install state (for local MCP)
+    bool installExpanded = false;
+    bool installing = false;
+    String? installError;
+    List<InstalledMcpPackage> installedPackages = [];
+    List<McpToolInfo> probedTools = [];
+    String? probedPackage;
+    String? probeError;
+    bool probing = false;
+    final packageCtrl = TextEditingController();
+
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      useSafeArea: true,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setBottomState) => Padding(
+          padding: EdgeInsets.only(
+            bottom: MediaQuery.of(ctx).viewInsets.bottom,
+            left: 20,
+            right: 20,
+            top: 20,
+          ),
+          child: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(existing != null ? '编辑 MCP Server' : '添加 MCP Server',
+                    style: Theme.of(context).textTheme.titleMedium),
+                const SizedBox(height: 16),
+                if (existing == null)
+                  TextField(
+                    controller: idCtrl,
+                    decoration: const InputDecoration(labelText: 'Server ID *'),
+                  ),
+                if (existing == null) const SizedBox(height: 12),
+                // 启用/禁用
+                SwitchListTile(
+                  title: const Text('启用'),
+                  value: enabled,
+                  onChanged: (v) => setBottomState(() => enabled = v),
+                  contentPadding: EdgeInsets.zero,
+                ),
+                const SizedBox(height: 12),
+                // 类型选择
+                SegmentedButton<String>(
+                  segments: const [
+                    ButtonSegment(value: 'local', label: Text('📦 本地')),
+                    ButtonSegment(value: 'remote', label: Text('🌐 远程')),
+                  ],
+                  selected: {type},
+                  onSelectionChanged: (v) => setBottomState(() => type = v.first),
+                ),
+                const SizedBox(height: 16),
+                if (type == 'local') ...[
+                  // npm 包安装区域（仅新增时显示）
+                  if (existing == null) ...[
+                    Container(
+                      decoration: BoxDecoration(
+                        color: Theme.of(context).colorScheme.primaryContainer.withOpacity(0.3),
+                        border: Border.all(color: Theme.of(context).colorScheme.primary.withOpacity(0.5)),
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      padding: const EdgeInsets.all(12),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Row(
+                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                            children: [
+                              Text(
+                                '📦 安装 npm 包（可选）',
+                                style: TextStyle(
+                                  fontWeight: FontWeight.w500,
+                                  color: Theme.of(context).colorScheme.primary,
+                                ),
+                              ),
+                              TextButton(
+                                onPressed: () async {
+                                  setBottomState(() => installExpanded = !installExpanded);
+                                  if (installExpanded) {
+                                    try {
+                                      final pkgs = await _svc.listInstalledMcpPackages();
+                                      setBottomState(() => installedPackages = pkgs);
+                                    } catch (_) {}
+                                  }
+                                },
+                                style: TextButton.styleFrom(
+                                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+                                  minimumSize: Size.zero,
+                                ),
+                                child: Text(installExpanded ? '收起' : '展开', style: const TextStyle(fontSize: 12)),
+                              ),
+                            ],
+                          ),
+                          if (installExpanded) ...[
+                            const SizedBox(height: 12),
+                            // 错误提示
+                            if (installError != null)
+                              Container(
+                                width: double.infinity,
+                                padding: const EdgeInsets.all(12),
+                                margin: const EdgeInsets.only(bottom: 12),
+                                decoration: BoxDecoration(
+                                  color: Theme.of(context).colorScheme.errorContainer,
+                                  borderRadius: BorderRadius.circular(6),
+                                ),
+                                child: Text('❌ $installError',
+                                    style: TextStyle(color: Theme.of(context).colorScheme.error, fontSize: 12)),
+                              ),
+                            // 正在探测
+                            if (probing)
+                              Container(
+                                padding: const EdgeInsets.all(8),
+                                margin: const EdgeInsets.only(bottom: 12),
+                                child: const Row(
+                                  children: [
+                                    SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2)),
+                                    SizedBox(width: 8),
+                                    Text('🔍 正在检测 Tools...'),
+                                  ],
+                                ),
+                              ),
+                            // 探测成功
+                            if (probedTools.isNotEmpty && probedPackage != null)
+                              Container(
+                                width: double.infinity,
+                                padding: const EdgeInsets.all(12),
+                                margin: const EdgeInsets.only(bottom: 12),
+                                decoration: BoxDecoration(
+                                  color: Colors.green.shade100,
+                                  borderRadius: BorderRadius.circular(6),
+                                  border: Border.all(color: Colors.green),
+                                ),
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text('✅ $probedPackage 安装成功！',
+                                        style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.green)),
+                                    const SizedBox(height: 4),
+                                    Wrap(
+                                      spacing: 4,
+                                      runSpacing: 4,
+                                      children: probedTools.map((t) => Chip(
+                                        label: Text(t.name, style: const TextStyle(fontSize: 10)),
+                                        visualDensity: VisualDensity.compact,
+                                      )).toList(),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            // 探测失败
+                            if (probeError != null && !probing)
+                              Container(
+                                padding: const EdgeInsets.all(8),
+                                margin: const EdgeInsets.only(bottom: 12),
+                                decoration: BoxDecoration(
+                                  color: Colors.amber.shade100,
+                                  borderRadius: BorderRadius.circular(6),
+                                ),
+                                child: Text('⚠️ $probeError', style: const TextStyle(fontSize: 12, color: Colors.brown)),
+                              ),
+                            // 安装输入
+                            Row(
+                              children: [
+                                Expanded(
+                                  child: TextField(
+                                    controller: packageCtrl,
+                                    decoration: const InputDecoration(
+                                      isDense: true,
+                                      hintText: '包名，如 @modelcontextprotocol/server-filesystem',
+                                      contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                                    ),
+                                    style: const TextStyle(fontSize: 13),
+                                  ),
+                                ),
+                                const SizedBox(width: 8),
+                                FilledButton(
+                                  onPressed: installing ? null : () async {
+                                    if (packageCtrl.text.trim().isEmpty) return;
+                                    setBottomState(() {
+                                      installing = true;
+                                      installError = null;
+                                      probeError = null;
+                                      probedTools = [];
+                                      probedPackage = null;
+                                    });
+                                    try {
+                                      final result = await _svc.installMcpPackage(packageCtrl.text.trim());
+                                      if (result.success) {
+                                        // 探测 tools
+                                        setBottomState(() => probing = true);
+                                        try {
+                                          final probeResult = await _svc.probeMcpPackageTools(result.packageName);
+                                          if (probeResult.success && probeResult.tools.isNotEmpty) {
+                                            setBottomState(() {
+                                              probedTools = probeResult.tools;
+                                              probedPackage = result.packageName;
+                                            });
+                                          } else {
+                                            setBottomState(() => probeError = probeResult.error ?? '未检测到 Tools');
+                                          }
+                                        } catch (e) {
+                                          setBottomState(() => probeError = e.toString());
+                                        } finally {
+                                          setBottomState(() => probing = false);
+                                        }
+                                        // 刷新已安装列表
+                                        try {
+                                          final pkgs = await _svc.listInstalledMcpPackages();
+                                          setBottomState(() => installedPackages = pkgs);
+                                        } catch (_) {}
+                                        packageCtrl.clear();
+                                      } else {
+                                        setBottomState(() => installError = result.stderr ?? result.message ?? '安装失败');
+                                      }
+                                    } catch (e) {
+                                      setBottomState(() => installError = e.toString());
+                                    } finally {
+                                      setBottomState(() => installing = false);
+                                    }
+                                  },
+                                  child: installing
+                                      ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
+                                      : const Text('安装'),
+                                ),
+                              ],
+                            ),
+                            const SizedBox(height: 8),
+                            Text('常用: @modelcontextprotocol/server-filesystem',
+                                style: TextStyle(fontSize: 11, color: Theme.of(context).colorScheme.outline)),
+                            // 已安装列表
+                            if (installedPackages.isNotEmpty) ...[
+                              const SizedBox(height: 8),
+                              ExpansionTile(
+                                title: Text('已安装的 MCP 包 (${installedPackages.length})',
+                                    style: const TextStyle(fontSize: 12)),
+                                tilePadding: EdgeInsets.zero,
+                                childrenPadding: const EdgeInsets.only(left: 16),
+                                children: installedPackages.map((pkg) => ListTile(
+                                  dense: true,
+                                  title: Text(pkg.name, style: const TextStyle(fontSize: 12)),
+                                  trailing: Text(pkg.version, style: const TextStyle(fontSize: 11, color: Colors.grey)),
+                                )).toList(),
+                              ),
+                            ],
+                          ],
+                        ],
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                  ],
+                  TextField(
+                    controller: commandCtrl,
+                    decoration: const InputDecoration(labelText: '启动命令 *'),
+                  ),
+                  const SizedBox(height: 12),
+                  TextField(
+                    controller: argsCtrl,
+                    decoration: const InputDecoration(
+                      labelText: '命令参数（每行一个）',
+                      hintText: '-y\n@anthropic/mcp-server-xxx',
+                    ),
+                    maxLines: 3,
+                  ),
+                  const SizedBox(height: 12),
+                  TextField(
+                    controller: envCtrl,
+                    decoration: const InputDecoration(
+                      labelText: '环境变量（KEY=VALUE 每行一个）',
+                      hintText: 'API_KEY=xxx',
+                    ),
+                    maxLines: 2,
+                  ),
+                ] else ...[
+                  TextField(
+                    controller: urlCtrl,
+                    decoration: const InputDecoration(labelText: '远程 URL *'),
+                  ),
+                  const SizedBox(height: 12),
+                  TextField(
+                    controller: headersCtrl,
+                    decoration: const InputDecoration(
+                      labelText: '请求头（KEY: VALUE 每行一个）',
+                      hintText: 'Authorization: Bearer xxx',
+                    ),
+                    maxLines: 2,
+                  ),
+                ],
+                const SizedBox(height: 20),
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.end,
+                  children: [
+                    TextButton(
+                      onPressed: () => Navigator.pop(ctx),
+                      child: const Text('取消'),
+                    ),
+                    const SizedBox(width: 8),
+                    FilledButton(
+                      onPressed: () async {
+                        final id = existing?.id ?? idCtrl.text.trim();
+                        if (id.isEmpty) {
+                          _flash('Server ID 不能为空');
+                          return;
+                        }
+                        if (type == 'local' && commandCtrl.text.trim().isEmpty) {
+                          _flash('启动命令不能为空');
+                          return;
+                        }
+                        if (type == 'remote' && urlCtrl.text.trim().isEmpty) {
+                          _flash('远程 URL 不能为空');
+                          return;
+                        }
+
+                        // 解析 args
+                        final args = argsCtrl.text
+                            .split('\n')
+                            .map((s) => s.trim())
+                            .where((s) => s.isNotEmpty)
+                            .toList();
+
+                        // 解析 env
+                        final env = <String, String>{};
+                        for (final line in envCtrl.text.split('\n')) {
+                          final idx = line.indexOf('=');
+                          if (idx > 0) {
+                            env[line.substring(0, idx).trim()] = line.substring(idx + 1).trim();
+                          }
+                        }
+
+                        // 解析 headers
+                        final headers = <String, String>{};
+                        for (final line in headersCtrl.text.split('\n')) {
+                          final idx = line.indexOf(':');
+                          if (idx > 0) {
+                            headers[line.substring(0, idx).trim()] = line.substring(idx + 1).trim();
+                          }
+                        }
+
+                        final newServer = McpServerConfig(
+                          id: id,
+                          type: type,
+                          enabled: enabled,
+                          command: type == 'local' ? commandCtrl.text.trim() : null,
+                          args: type == 'local' ? args : [],
+                          env: type == 'local' ? env : {},
+                          url: type == 'remote' ? urlCtrl.text.trim() : null,
+                          headers: type == 'remote' ? headers : {},
+                        );
+
+                        setState(() {
+                          if (existing != null) {
+                            final idx = _mcpServers.indexWhere((s) => s.id == existing.id);
+                            if (idx >= 0) _mcpServers[idx] = newServer;
+                          } else {
+                            if (_mcpServers.any((s) => s.id == id)) {
+                              _flash('Server ID 已存在');
+                              return;
+                            }
+                            _mcpServers.add(newServer);
+                          }
+                        });
+
+                        // 保存到后端
+                        await _saveMcpServers();
+                        Navigator.pop(ctx);
+                        _flash(existing != null ? 'MCP Server 已更新' : 'MCP Server 已添加');
+                      },
+                      child: Text(existing != null ? '更新' : '添加'),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 20),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Future<void> _saveMcpServers() async {
+    try {
+      await _svc.updateAgentConfig(
+        widget.agentId,
+        mcpServers: _mcpServers.map((s) => s.toJson()).toList(),
+      );
+    } catch (e) {
+      _flash('保存失败: $e');
+    }
+  }
+
+  void _toggleMcpServer(McpServerConfig server) {
+    setState(() {
+      final idx = _mcpServers.indexWhere((s) => s.id == server.id);
+      if (idx >= 0) {
+        _mcpServers[idx] = server.copyWith(enabled: !server.enabled);
+      }
+    });
+    _saveMcpServers();
+  }
+
+  Future<void> _deleteMcpServer(String serverId) async {
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('确认删除'),
+        content: const Text('确定删除此 MCP Server？'),
+        actions: [
+          TextButton(
+              onPressed: () => Navigator.pop(ctx, false),
+              child: const Text('取消')),
+          FilledButton(
+              onPressed: () => Navigator.pop(ctx, true),
+              child: const Text('删除')),
+        ],
+      ),
+    );
+    if (confirm == true) {
+      setState(() {
+        _mcpServers.removeWhere((s) => s.id == serverId);
+        _mcpServerTools.remove(serverId);
+      });
+      await _saveMcpServers();
+      _flash('MCP Server 已删除');
+    }
+  }
+
+  Future<void> _loadMcpServerTools(McpServerConfig server) async {
+    // 如果已经展开，则收起
+    if (_mcpServerTools.containsKey(server.id)) {
+      setState(() {
+        _mcpServerTools.remove(server.id);
+      });
+      return;
+    }
+
+    setState(() {
+      _loadingMcpTools[server.id] = true;
+    });
+
+    try {
+      final result = await _svc.testMcpServer(server);
+      if (result.success) {
+        setState(() {
+          _mcpServerTools[server.id] = result.tools;
+        });
+      } else {
+        _flash('获取工具失败: ${result.error ?? '未知错误'}');
+      }
+    } catch (e) {
+      _flash('获取工具失败: $e');
+    } finally {
+      setState(() {
+        _loadingMcpTools[server.id] = false;
+      });
     }
   }
 }

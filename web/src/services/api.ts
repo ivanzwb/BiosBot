@@ -154,6 +154,7 @@ export interface AgentInfo {
   defaultTemperature?: number;
   systemPrompt?: string;
   source?: 'db' | 'file';
+  mcpServers?: McpServerConfig[];
 }
 
 export function listAgents(): Promise<AgentInfo[]> {
@@ -180,7 +181,7 @@ export function deleteAgent(agentId: string): Promise<{ success: boolean }> {
 
 export function updateAgentConfig(
   agentId: string,
-  fields: { name?: string; description?: string; labels?: string[]; defaultTemperature?: number; systemPrompt?: string },
+  fields: { name?: string; description?: string; labels?: string[]; defaultTemperature?: number; systemPrompt?: string; mcpServers?: McpServerConfig[] },
 ): Promise<{ success: boolean }> {
   return request(`/agents/${agentId}/config`, {
     method: 'PUT',
