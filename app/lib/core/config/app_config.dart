@@ -10,5 +10,5 @@ class AppConfig {
   static const int taskPollInterval = 2000;
 
   /// 应用名称
-  static const String appName = 'DolphinBot';
+  static const String appName = 'BiosBot';
 }

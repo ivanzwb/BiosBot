@@ -23,7 +23,7 @@ import app from './app';
 import { initWebSocket } from './services/ws.service';
 
 async function bootstrap(): Promise<void> {
-  logger.info('=== DolphinBot 启动中 ===');
+  logger.info('=== BiosBot 启动中 ===');
 
   // 1. 数据库初始化
   logger.info('Running database migrations...');

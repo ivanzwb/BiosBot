@@ -1,4 +1,4 @@
-# DolphinBot — 多智能体平台
+# BiosBot — 多智能体平台
 
 > 本文档描述了多智能体系统的整体架构、技术选型与项目结构，适用于本地和远程多端部署场景。
 
@@ -117,7 +117,7 @@ graph LR
 
 ```env
 # === 数据库 ===
-SQLITE_DB_PATH=../database/dolphinbot.db
+SQLITE_DB_PATH=../database/biosbot.db
 
 # === 服务 ===
 PORT=3000
@@ -354,7 +354,7 @@ interface ConfigRecord {
 ## 四、项目结构
 
 ```text
-dolphinbot/
+biosbot/
 ├── backend/                           # Node.js 主后端服务（Express + TypeScript）
 │   ├── src/
 │   │   ├── index.ts                  # 服务器启动入口（HTTP + WebSocket）
@@ -508,7 +508,7 @@ dolphinbot/
 ├── docs/                             # 项目文档
 ├── deploy/                           # Docker、CI/CD 配置
 ├── database/                         # 数据库文件
-│   └── dolphinbot.db                 # SQLite 数据库
+│   └── biosbot.db                 # SQLite 数据库
 └── README.md
 ```
 
@@ -741,7 +741,7 @@ proxy-agent 作为"中枢代理"，主要负责：
 本项目采用 [Apache License 2.0](LICENSE) 开源许可证。
 
 ```
-Copyright 2026 DolphinBot Contributors
+Copyright 2026 BiosBot Contributors
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.

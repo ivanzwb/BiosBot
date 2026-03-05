@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { NavLink, useNavigate, useParams } from 'react-router-dom';
 import * as api from '../services/api';
+import LogoIcon from './LogoIcon';
 import styles from './Sidebar.module.css';
 
 export default function Sidebar() {
@@ -46,7 +47,9 @@ export default function Sidebar() {
 
   return (
     <aside className={styles.sidebar}>
-      <div className={styles.logo}>🐬 DolphinBot</div>
+      <div className={styles.logo}>
+        <LogoIcon size={28} /> BiosBot
+      </div>
 
       <button className={styles.newChat} onClick={handleNew}>
         + 新对话

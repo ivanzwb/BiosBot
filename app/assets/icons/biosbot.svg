@@ -1,0 +1,31 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" fill="none">
+  <!-- BiosBot App Icon - Terminal/Command Line Style -->
+  <defs>
+    <linearGradient id="bg-gradient" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#1a1a2e;stop-opacity:1" />
+      <stop offset="100%" style="stop-color:#16213e;stop-opacity:1" />
+    </linearGradient>
+  </defs>
+
+  <!-- Background rounded rectangle -->
+  <rect x="32" y="32" width="960" height="960" rx="192" fill="url(#bg-gradient)" stroke="#00bcd4" stroke-width="32"/>
+
+  <!-- Terminal window header dots -->
+  <circle cx="160" cy="140" r="40" fill="#ff5f56"/>
+  <circle cx="280" cy="140" r="40" fill="#ffbd2e"/>
+  <circle cx="400" cy="140" r="40" fill="#27ca40"/>
+
+  <!-- Command prompt symbol > -->
+  <path d="M160 360 L320 512 L160 664" stroke="#00bcd4" stroke-width="64" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+
+  <!-- Cursor block -->
+  <rect x="400" y="448" width="256" height="96" rx="16" fill="#00bcd4"/>
+
+  <!-- Second command line hint -->
+  <rect x="160" y="760" width="384" height="64" rx="32" fill="rgba(0,188,212,0.4)"/>
+
+  <!-- Blinking cursor indicator -->
+  <rect x="560" y="760" width="16" height="64" rx="4" fill="#00bcd4">
+    <animate attributeName="opacity" values="1;0;1" dur="1s" repeatCount="indefinite"/>
+  </rect>
+</svg>

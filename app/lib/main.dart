@@ -14,18 +14,18 @@ void main() async {
   final lifecycle = AppLifecycleManager();
   await lifecycle.init();
 
-  runApp(DolphinBotApp(lifecycle: lifecycle));
+  runApp(BiosBotApp(lifecycle: lifecycle));
 }
 
-class DolphinBotApp extends StatefulWidget {
+class BiosBotApp extends StatefulWidget {
   final AppLifecycleManager lifecycle;
-  const DolphinBotApp({super.key, required this.lifecycle});
+  const BiosBotApp({super.key, required this.lifecycle});
 
   @override
-  State<DolphinBotApp> createState() => _DolphinBotAppState();
+  State<BiosBotApp> createState() => _BiosBotAppState();
 }
 
-class _DolphinBotAppState extends State<DolphinBotApp> {
+class _BiosBotAppState extends State<BiosBotApp> {
   late final ChatViewModel _chatVm;
   late final AgentsViewModel _agentsVm;
   late final SettingsViewModel _settingsVm;
@@ -62,13 +62,13 @@ class _DolphinBotAppState extends State<DolphinBotApp> {
         ChangeNotifierProvider.value(value: _settingsVm),
       ],
       child: MaterialApp.router(
-        title: 'DolphinBot',
+        title: 'BiosBot',
         theme: AppTheme.light,
         darkTheme: AppTheme.dark,
         themeMode: ThemeMode.system,
         routerConfig: appRouter,
         debugShowCheckedModeBanner: false,
-        restorationScopeId: 'dolphinbot_root',
+        restorationScopeId: 'biosbot_root',
       ),
     );
   }

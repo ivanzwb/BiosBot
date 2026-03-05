@@ -95,7 +95,7 @@ class _ConversationPanel extends StatelessWidget {
         // 标题 + 新建对话按钮
         AppBar(
           automaticallyImplyLeading: false,
-          title: const Text('DolphinBot'),
+          title: const Text('BiosBot'),
           actions: [
             IconButton(
               icon: const Icon(Icons.add),
@@ -241,12 +241,12 @@ class _EmptyState extends StatelessWidget {
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
-                Icon(Icons.psychology,
+                Icon(Icons.terminal,
                     size: 72,
                     color: Theme.of(context).colorScheme.primary),
                 const SizedBox(height: 16),
                 Text(
-                  '🐬 DolphinBot',
+                  'BiosBot',
                   style: Theme.of(context).textTheme.headlineSmall,
                 ),
                 const SizedBox(height: 8),

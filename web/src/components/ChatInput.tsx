@@ -15,7 +15,7 @@ export default function ChatInput({ onSend, disabled }: Props) {
     const el = textareaRef.current;
     if (el) {
       el.style.height = 'auto';
-      el.style.height = Math.min(el.scrollHeight, 160) + 'px';
+      el.style.height = Math.max(50, Math.min(el.scrollHeight, 160)) + 'px';
     }
   }, [text]);
 

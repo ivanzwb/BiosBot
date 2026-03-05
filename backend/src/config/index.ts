@@ -7,7 +7,7 @@ export const config = {
   port: parseInt(process.env.PORT || '3000', 10),
   nodeEnv: process.env.NODE_ENV || 'development',
   logLevel: process.env.LOG_LEVEL || 'debug',
-  sqliteDbPath: process.env.SQLITE_DB_PATH || path.resolve(__dirname, '../../../database/dolphinbot.db'),
+  sqliteDbPath: process.env.SQLITE_DB_PATH || path.resolve(__dirname, '../../../database/biosbot.db'),
 
   /**
    * Agent 发现目录列表（逗号分隔的绝对或相对路径）。

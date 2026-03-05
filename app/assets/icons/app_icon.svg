@@ -1,0 +1,26 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" fill="none">
+  <!-- BiosBot App Icon - DNA Double Helix -->
+  <defs>
+    <linearGradient id="bg-gradient" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#00bcd4;stop-opacity:1" />
+      <stop offset="100%" style="stop-color:#4caf50;stop-opacity:1" />
+    </linearGradient>
+  </defs>
+
+  <!-- Background -->
+  <rect width="1024" height="1024" rx="224" fill="url(#bg-gradient)" />
+
+  <!-- DNA helix strands -->
+  <g transform="translate(256, 128) scale(2)">
+    <path d="M64 64 Q128 96, 192 80 Q128 128, 64 112 Q128 176, 192 160 Q128 224, 64 208 Q128 288, 192 272 Q128 336, 64 320 Q128 384, 192 368"
+          stroke="white" stroke-width="32" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+    <path d="M192 64 Q128 96, 64 80 Q128 128, 192 112 Q128 176, 64 160 Q128 224, 192 208 Q128 288, 64 272 Q128 336, 192 320 Q128 384, 64 368"
+          stroke="white" stroke-width="32" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+
+    <!-- Connection bars -->
+    <line x1="80" y1="96" x2="176" y2="96" stroke="rgba(255,255,255,0.7)" stroke-width="20" stroke-linecap="round"/>
+    <line x1="72" y1="168" x2="184" y2="168" stroke="rgba(255,255,255,0.7)" stroke-width="20" stroke-linecap="round"/>
+    <line x1="80" y1="240" x2="176" y2="240" stroke="rgba(255,255,255,0.7)" stroke-width="20" stroke-linecap="round"/>
+    <line x1="72" y1="312" x2="184" y2="312" stroke="rgba(255,255,255,0.7)" stroke-width="20" stroke-linecap="round"/>
+  </g>
+</svg>

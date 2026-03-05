@@ -12,7 +12,7 @@ final _rootNavigatorKey = GlobalKey<NavigatorState>();
 final GoRouter appRouter = GoRouter(
   navigatorKey: _rootNavigatorKey,
   initialLocation: '/chat',
-  restorationScopeId: 'dolphinbot_router',
+  restorationScopeId: 'biosbot_router',
   routes: [
     StatefulShellRoute.indexedStack(
       builder: (context, state, navigationShell) {

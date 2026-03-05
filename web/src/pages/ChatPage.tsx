@@ -5,6 +5,7 @@ import { onWsEventType, connectWs } from '../services/ws';
 import ChatInput from '../components/ChatInput';
 import MessageBubble from '../components/MessageBubble';
 import ExecutionStepsIndicator from '../components/ExecutionStepsIndicator';
+import LogoIcon from '../components/LogoIcon';
 import { ExecutionStep } from '../types/execution-step';
 import styles from './ChatPage.module.css';
 
@@ -188,7 +189,8 @@ export default function ChatPage() {
     return (
       <div className={styles.container}>
         <div className={styles.empty}>
-          <h2>🐬 DolphinBot</h2>
+          <LogoIcon size={64} />
+          <h2>BiosBot</h2>
           <p>你的多智能体助手。输入问题开始对话。</p>
         </div>
         <ChatInput onSend={handleSend} disabled={loading} />
