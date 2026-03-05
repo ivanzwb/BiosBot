@@ -172,7 +172,25 @@ async function invokeDomainAgent(agentId: string, input: AgentInput): Promise<Ag
 
 async function directAnswer(input: AgentInput): Promise<string> {
   const proxyDir = path.resolve(__dirname);
-  const defaultPrompt = '你是一个通用智能助理，尽量简洁准确地回答用户问题。如果不确定，请坦诚说明。';
+
+  // 基础 prompt - 强调使用工具
+  let defaultPrompt = `你是一个通用智能助理，配备了多种工具来帮助用户完成任务。
+
+**重要**：你拥有以下工具能力，当用户请求相关操作时，你**必须**使用这些工具，而不是说"无法访问"：
+
+1. **文件系统工具**（来自 filesystem MCP Server）：
+   - \`list_directory\`: 列出目录内容
+   - \`read_file\` / \`read_text_file\`: 读取文件内容
+   - \`write_file\`: 写入文件
+   - \`search_files\`: 搜索文件
+   - \`directory_tree\`: 查看目录树结构
+   - \`list_allowed_directories\`: 查看允许访问的目录
+
+2. **其他全局工具**：如天气查询等
+
+当用户请求涉及文件操作时（如"列出目录"、"读取文件"、"查看文件内容"等），请直接调用相应的工具执行操作，然后将结果展示给用户。
+
+如果不确定要操作哪个目录，可以先调用 \`list_allowed_directories\` 查看允许访问的目录，然后再列出该目录内容。`;
 
   // 从 agent_model_mapping 读取可配置的 temperature
   const mapping = getConfigJSON<any>('agent_model_mapping');

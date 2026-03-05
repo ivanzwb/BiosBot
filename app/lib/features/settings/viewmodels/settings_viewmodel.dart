@@ -36,6 +36,23 @@ class SettingsViewModel extends ChangeNotifier {
   List<AgentTool> globalTools = [];
   bool loadingGlobalTools = false;
 
+  // MCP Server
+  List<McpServerConfig> mcpServers = [];
+  bool loadingMcpServers = false;
+  Map<String, List<McpTool>> mcpServerTools = {};
+  Map<String, bool> loadingMcpTools = {};
+
+  // MCP Package Install
+  List<InstalledMcpPackage> installedMcpPackages = [];
+  bool installingMcpPackage = false;
+  String? mcpInstallError;
+  String? mcpInstallNpmLog;
+  // MCP Tools Probe
+  bool probingMcpTools = false;
+  List<McpToolInfo> probedMcpTools = [];
+  String? probedMcpPackage;
+  String? mcpProbeError;
+
   Map<String, dynamic> _agentModelMapping = {};
 
   bool _isLoading = false;
@@ -337,5 +354,240 @@ class SettingsViewModel extends ChangeNotifier {
     } catch (e) {
       flash('删除失败: $e');
     }
+  }
+
+  // ============================================================
+  // MCP Server 管理
+  // ============================================================
+
+  /// 加载 MCP Server 列表
+  Future<void> loadMcpServers() async {
+    loadingMcpServers = true;
+    notifyListeners();
+
+    try {
+      mcpServers = await _svc.listMcpServers();
+    } catch (e) {
+      mcpServers = [];
+    }
+
+    loadingMcpServers = false;
+    notifyListeners();
+  }
+
+  /// 创建 MCP Server
+  Future<McpServerConfig?> createMcpServer({
+    required String id,
+    String type = 'local',
+    String? command,
+    List<String>? args,
+    Map<String, String>? env,
+    String? url,
+    Map<String, String>? headers,
+    bool enabled = true,
+  }) async {
+    try {
+      final data = <String, dynamic>{
+        'id': id,
+        'type': type,
+        'enabled': enabled,
+      };
+      if (type == 'local') {
+        data['command'] = command ?? '';
+        data['args'] = args ?? [];
+        data['env'] = env ?? {};
+      } else {
+        data['url'] = url ?? '';
+        data['headers'] = headers ?? {};
+      }
+      final server = await _svc.createMcpServer(data);
+      mcpServers.add(server);
+      notifyListeners();
+      flash('已创建');
+      return server;
+    } catch (e) {
+      flash('创建失败: $e');
+      return null;
+    }
+  }
+
+  /// 更新 MCP Server
+  Future<void> updateMcpServer(String serverId, Map<String, dynamic> fields) async {
+    try {
+      await _svc.updateMcpServer(serverId, fields);
+      final idx = mcpServers.indexWhere((s) => s.id == serverId);
+      if (idx >= 0) {
+        await loadMcpServers();
+      }
+      flash('已更新');
+    } catch (e) {
+      flash('更新失败: $e');
+    }
+  }
+
+  /// 删除 MCP Server
+  Future<void> deleteMcpServer(String serverId) async {
+    try {
+      await _svc.deleteMcpServer(serverId);
+      mcpServers.removeWhere((s) => s.id == serverId);
+      mcpServerTools.remove(serverId);
+      notifyListeners();
+      flash('已删除');
+    } catch (e) {
+      flash('删除失败: $e');
+    }
+  }
+
+  // MCP Server 测试
+  bool testingMcpServer = false;
+  McpTestResult? mcpTestResult;
+
+  /// 测试 MCP Server 配置
+  Future<McpTestResult?> testMcpServer(McpServerConfig config) async {
+    testingMcpServer = true;
+    mcpTestResult = null;
+    notifyListeners();
+
+    try {
+      final result = await _svc.testMcpServer(config);
+      mcpTestResult = result;
+      notifyListeners();
+
+      if (result.success) {
+        flash('测试成功，发现 ${result.tools.length} 个 Tools');
+      } else {
+        flash('测试失败: ${result.error}');
+      }
+      return result;
+    } catch (e) {
+      flash('测试出错: $e');
+      mcpTestResult = McpTestResult(
+        success: false,
+        serverId: config.id,
+        testTime: DateTime.now().toIso8601String(),
+        tools: [],
+        error: e.toString(),
+      );
+      notifyListeners();
+      return mcpTestResult;
+    } finally {
+      testingMcpServer = false;
+      notifyListeners();
+    }
+  }
+
+  void clearMcpTestResult() {
+    mcpTestResult = null;
+    notifyListeners();
+  }
+
+  /// 加载 MCP Server 提供的工具列表
+  Future<void> loadMcpServerTools(String serverId) async {
+    loadingMcpTools[serverId] = true;
+    notifyListeners();
+
+    try {
+      final tools = await _svc.getMcpServerTools(serverId);
+      mcpServerTools[serverId] = tools;
+    } catch (e) {
+      flash('加载工具失败: $e');
+    }
+
+    loadingMcpTools[serverId] = false;
+    notifyListeners();
+  }
+
+  /// 加载已安装的 MCP 包列表
+  Future<void> loadInstalledMcpPackages() async {
+    try {
+      installedMcpPackages = await _svc.listInstalledMcpPackages();
+      notifyListeners();
+    } catch (e) {
+      installedMcpPackages = [];
+    }
+  }
+
+  /// 安装 MCP 包
+  Future<bool> installMcpPackage(String packageName, {String? registry}) async {
+    installingMcpPackage = true;
+    mcpInstallError = null;
+    mcpInstallNpmLog = null;
+    probedMcpTools = [];
+    probedMcpPackage = null;
+    mcpProbeError = null;
+    notifyListeners();
+
+    try {
+      final result = await _svc.installMcpPackage(packageName, registry: registry);
+      if (result.success) {
+        flash('安装成功: ${result.packageName}，正在检测 Tools...');
+        await loadInstalledMcpPackages();
+        mcpInstallError = null;
+        mcpInstallNpmLog = null;
+        installingMcpPackage = false;
+        notifyListeners();
+
+        // 安装成功后自动探测 tools
+        await probeMcpPackageTools(result.packageName);
+        return true;
+      } else {
+        mcpInstallError = result.stderr ?? result.message ?? '未知错误';
+        mcpInstallNpmLog = result.npmLog;
+        flash('安装失败');
+        installingMcpPackage = false;
+        notifyListeners();
+        return false;
+      }
+    } catch (e) {
+      mcpInstallError = e.toString();
+      mcpInstallNpmLog = null;
+      flash('安装失败');
+      installingMcpPackage = false;
+      notifyListeners();
+      return false;
+    }
+  }
+
+  /// 探测已安装 MCP 包的 tools
+  Future<void> probeMcpPackageTools(String packageName) async {
+    probingMcpTools = true;
+    probedMcpTools = [];
+    probedMcpPackage = null;
+    mcpProbeError = null;
+    notifyListeners();
+
+    try {
+      final result = await _svc.probeMcpPackageTools(packageName);
+      if (result.success && result.tools.isNotEmpty) {
+        probedMcpTools = result.tools;
+        probedMcpPackage = packageName;
+        flash('检测到 ${result.tools.length} 个可用 Tools');
+      } else if (result.error != null) {
+        mcpProbeError = result.error;
+        flash('Tools 探测失败');
+      } else {
+        mcpProbeError = '未检测到可用 Tools（可能需要配置启动参数）';
+      }
+    } catch (e) {
+      mcpProbeError = e.toString();
+    } finally {
+      probingMcpTools = false;
+      notifyListeners();
+    }
+  }
+
+  /// 清除安装错误
+  void clearMcpInstallError() {
+    mcpInstallError = null;
+    mcpInstallNpmLog = null;
+    notifyListeners();
+  }
+
+  /// 清除探测状态
+  void clearMcpProbeState() {
+    probedMcpTools = [];
+    probedMcpPackage = null;
+    mcpProbeError = null;
+    notifyListeners();
   }
 }

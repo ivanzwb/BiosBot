@@ -59,6 +59,14 @@ export async function runWithSkills(options: SkillRunnerOptions): Promise<string
   const skillTools = createSkillTools(skills);
   const allTools: DynamicStructuredTool[] = [...skillTools, ...extraTools];
 
+  // 调试日志
+  logger.info('skill-runner: tools assembled', {
+    skillTools: skillTools.length,
+    extraTools: extraTools.length,
+    totalTools: allTools.length,
+    toolNames: allTools.map(t => t.name),
+  });
+
   // 无工具时直接调用
   if (allTools.length === 0) {
     const response = await chat.invoke([

@@ -468,3 +468,133 @@ export async function uploadGlobalToolScript(
   }
   return resp.json();
 }
+
+// ============================================================
+// MCP Server 管理
+// ============================================================
+
+export type McpServerType = 'local' | 'remote';
+
+export interface McpServerConfig {
+  id: string;
+  type?: McpServerType;
+  enabled?: boolean;
+  // 本地 MCP Server (type = 'local')
+  command?: string;
+  args?: string[];
+  env?: Record<string, string>;
+  // 远程 MCP Server (type = 'remote')
+  url?: string;
+  headers?: Record<string, string>;
+}
+
+export interface McpTool {
+  name: string;
+  description?: string;
+  inputSchema?: Record<string, unknown>;
+}
+
+export function listMcpServers(): Promise<McpServerConfig[]> {
+  return request('/mcp-servers');
+}
+
+export function getMcpServerTools(serverId: string): Promise<McpTool[]> {
+  return request(`/mcp-servers/${encodeURIComponent(serverId)}/tools`);
+}
+
+export function createMcpServer(
+  server: McpServerConfig,
+): Promise<{ success: boolean; server: McpServerConfig }> {
+  return request('/mcp-servers', {
+    method: 'POST',
+    body: JSON.stringify(server),
+  });
+}
+
+export function updateMcpServer(
+  serverId: string,
+  fields: Partial<McpServerConfig>,
+): Promise<{ success: boolean; server: McpServerConfig }> {
+  return request(`/mcp-servers/${encodeURIComponent(serverId)}`, {
+    method: 'PUT',
+    body: JSON.stringify(fields),
+  });
+}
+
+export function deleteMcpServer(serverId: string): Promise<{ success: boolean }> {
+  return request(`/mcp-servers/${encodeURIComponent(serverId)}`, {
+    method: 'DELETE',
+  });
+}
+
+// MCP 包安装
+export interface McpPackageInstallResult {
+  success: boolean;
+  packageName: string;
+  message?: string;
+  stdout?: string;
+  code?: string;
+  stderr?: string;
+  npmLog?: string; // 详细的 npm 日志文件内容
+}
+
+export interface InstalledMcpPackage {
+  name: string;
+  version: string;
+}
+
+export function installMcpPackage(
+  packageName: string,
+  registry?: string,
+): Promise<McpPackageInstallResult> {
+  return request('/mcp-servers/install', {
+    method: 'POST',
+    body: JSON.stringify({ packageName, registry }),
+  });
+}
+
+export function listInstalledMcpPackages(): Promise<InstalledMcpPackage[]> {
+  return request('/mcp-servers/packages');
+}
+
+// MCP Tool 探测
+export interface McpToolInfo {
+  name: string;
+  description?: string;
+  inputSchema?: Record<string, unknown>;
+}
+
+export interface McpProbeToolsResult {
+  success: boolean;
+  packageName: string;
+  tools: McpToolInfo[];
+  error?: string;
+}
+
+export function probeMcpPackageTools(
+  packageName: string,
+  args?: string[],
+): Promise<McpProbeToolsResult> {
+  return request('/mcp-servers/probe-tools', {
+    method: 'POST',
+    body: JSON.stringify({ packageName, args }),
+  });
+}
+
+// MCP Server 测试
+export interface McpTestResult {
+  success: boolean;
+  serverId: string;
+  testTime: string;
+  tools: Array<{ name: string; description?: string }>;
+  error?: string;
+}
+
+export function testMcpServer(
+  config: McpServerConfig,
+): Promise<McpTestResult> {
+  return request('/mcp-servers/test', {
+    method: 'POST',
+    body: JSON.stringify({ config }),
+  });
+}

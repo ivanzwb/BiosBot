@@ -201,3 +201,239 @@ class ModelProvider {
     if (embeddingModel != null && embeddingModel!.isNotEmpty) 'embeddingModel': embeddingModel,
   };
 }
+
+/// MCP Server 配置
+class McpServerConfig {
+  final String id;
+  final String type; // 'local' or 'remote'
+  final bool enabled;
+
+  // 本地 MCP Server 配置 (type = 'local')
+  final String? command;
+  final List<String> args;
+  final Map<String, String> env;
+
+  // 远程 MCP Server 配置 (type = 'remote')
+  final String? url;
+  final Map<String, String> headers;
+
+  McpServerConfig({
+    required this.id,
+    this.type = 'local',
+    this.enabled = true,
+    this.command,
+    this.args = const [],
+    this.env = const {},
+    this.url,
+    this.headers = const {},
+  });
+
+  bool get isLocal => type == 'local';
+  bool get isRemote => type == 'remote';
+
+  factory McpServerConfig.fromJson(Map<String, dynamic> json) {
+    return McpServerConfig(
+      id: json['id'] as String,
+      type: (json['type'] as String?) ?? 'local',
+      enabled: (json['enabled'] as bool?) ?? true,
+      command: json['command'] as String?,
+      args: (json['args'] as List<dynamic>?)?.cast<String>() ?? [],
+      env: (json['env'] as Map<String, dynamic>?)?.cast<String, String>() ?? {},
+      url: json['url'] as String?,
+      headers: (json['headers'] as Map<String, dynamic>?)?.cast<String, String>() ?? {},
+    );
+  }
+
+  Map<String, dynamic> toJson() => {
+    'id': id,
+    'type': type,
+    'enabled': enabled,
+    if (type == 'local') ...{
+      'command': command,
+      'args': args,
+      'env': env,
+    },
+    if (type == 'remote') ...{
+      'url': url,
+      'headers': headers,
+    },
+  };
+
+  McpServerConfig copyWith({
+    String? id,
+    String? type,
+    bool? enabled,
+    String? command,
+    List<String>? args,
+    Map<String, String>? env,
+    String? url,
+    Map<String, String>? headers,
+  }) {
+    return McpServerConfig(
+      id: id ?? this.id,
+      type: type ?? this.type,
+      enabled: enabled ?? this.enabled,
+      command: command ?? this.command,
+      args: args ?? this.args,
+      env: env ?? this.env,
+      url: url ?? this.url,
+      headers: headers ?? this.headers,
+    );
+  }
+}
+
+/// MCP Tool 简单信息（用于测试结果）
+class McpToolSimple {
+  final String name;
+  final String? description;
+
+  McpToolSimple({required this.name, this.description});
+
+  factory McpToolSimple.fromJson(Map<String, dynamic> json) {
+    return McpToolSimple(
+      name: json['name'] as String,
+      description: json['description'] as String?,
+    );
+  }
+}
+
+/// MCP Tool 信息
+class McpTool {
+  final String name;
+  final String? description;
+  final Map<String, dynamic>? inputSchema;
+
+  McpTool({
+    required this.name,
+    this.description,
+    this.inputSchema,
+  });
+
+  factory McpTool.fromJson(Map<String, dynamic> json) {
+    return McpTool(
+      name: json['name'] as String,
+      description: json['description'] as String?,
+      inputSchema: json['inputSchema'] as Map<String, dynamic>?,
+    );
+  }
+}
+
+/// MCP 包安装结果
+class McpPackageInstallResult {
+  final bool success;
+  final String packageName;
+  final String? message;
+  final String? stdout;
+  final String? code;
+  final String? stderr;
+  final String? npmLog; // 详细的 npm 日志文件内容
+
+  McpPackageInstallResult({
+    required this.success,
+    required this.packageName,
+    this.message,
+    this.stdout,
+    this.code,
+    this.stderr,
+    this.npmLog,
+  });
+
+  factory McpPackageInstallResult.fromJson(Map<String, dynamic> json) {
+    return McpPackageInstallResult(
+      success: json['success'] as bool,
+      packageName: json['packageName'] as String,
+      message: json['message'] as String?,
+      stdout: json['stdout'] as String?,
+      code: json['code'] as String?,
+      stderr: json['stderr'] as String?,
+      npmLog: json['npmLog'] as String?,
+    );
+  }
+}
+
+/// 已安装的 MCP 包
+class InstalledMcpPackage {
+  final String name;
+  final String version;
+
+  InstalledMcpPackage({required this.name, required this.version});
+
+  factory InstalledMcpPackage.fromJson(Map<String, dynamic> json) {
+    return InstalledMcpPackage(
+      name: json['name'] as String,
+      version: json['version'] as String,
+    );
+  }
+}
+
+/// MCP Tool 信息
+class McpToolInfo {
+  final String name;
+  final String? description;
+
+  McpToolInfo({required this.name, this.description});
+
+  factory McpToolInfo.fromJson(Map<String, dynamic> json) {
+    return McpToolInfo(
+      name: json['name'] as String,
+      description: json['description'] as String?,
+    );
+  }
+}
+
+/// MCP Tools 探测结果
+class McpProbeToolsResult {
+  final bool success;
+  final String packageName;
+  final List<McpToolInfo> tools;
+  final String? error;
+
+  McpProbeToolsResult({
+    required this.success,
+    required this.packageName,
+    required this.tools,
+    this.error,
+  });
+
+  factory McpProbeToolsResult.fromJson(Map<String, dynamic> json) {
+    return McpProbeToolsResult(
+      success: json['success'] as bool,
+      packageName: json['packageName'] as String,
+      tools: (json['tools'] as List<dynamic>?)
+              ?.map((e) => McpToolInfo.fromJson(e as Map<String, dynamic>))
+              .toList() ??
+          [],
+      error: json['error'] as String?,
+    );
+  }
+}
+
+/// MCP Server 测试结果
+class McpTestResult {
+  final bool success;
+  final String serverId;
+  final String testTime;
+  final List<McpToolSimple> tools;
+  final String? error;
+
+  McpTestResult({
+    required this.success,
+    required this.serverId,
+    required this.testTime,
+    required this.tools,
+    this.error,
+  });
+
+  factory McpTestResult.fromJson(Map<String, dynamic> json) {
+    return McpTestResult(
+      success: json['success'] as bool,
+      serverId: json['serverId'] as String,
+      testTime: json['testTime'] as String,
+      tools: (json['tools'] as List<dynamic>?)
+              ?.map((e) => McpToolSimple.fromJson(e as Map<String, dynamic>))
+              .toList() ??
+          [],
+      error: json['error'] as String?,
+    );
+  }
+}

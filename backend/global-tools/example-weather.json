@@ -15,5 +15,5 @@
     "url": "https://api.example.com/weather?city={{city}}",
     "method": "GET"
   },
-  "enabled": false
+  "enabled": true
 }

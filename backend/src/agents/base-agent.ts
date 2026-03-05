@@ -21,7 +21,8 @@ import { runWithSkills } from './skill-runner';
 import { createRagTool, buildRagPrompt } from './rag-tool';
 import { hasKnowledge } from './rag-service';
 import { loadAgentTools } from './tool-loader';
-import { loadGlobalTools } from './global-tool-loader';
+import { loadGlobalTools, loadMcpTools } from './global-tool-loader';
+import logger from '../infra/logger/logger';
 
 // ============================================================
 // 模型配置解析
@@ -270,12 +271,26 @@ export async function runAgent(options: AgentRunOptions): Promise<string> {
   // 5. 加载全局Tools（所有 Agent 共享）
   const { tools: globalTools } = loadGlobalTools();
 
-  const extraTools: DynamicStructuredTool[] = [...staticExtraTools, ...rag.tools, ...agentTools, ...globalTools];
+  // 6. 加载 MCP Server 提供的工具
+  const mcpTools = await loadMcpTools();
 
-  // 6. 转换历史消息为 LangChain 格式（短期记忆）
+  const extraTools: DynamicStructuredTool[] = [...staticExtraTools, ...rag.tools, ...agentTools, ...globalTools, ...mcpTools];
+
+  // 调试日志：显示加载的工具
+  logger.info(`base-agent: tools loaded for "${agentId}"`, {
+    staticTools: staticExtraTools.length,
+    ragTools: rag.tools.length,
+    agentTools: agentTools.length,
+    globalTools: globalTools.length,
+    mcpTools: mcpTools.length,
+    totalExtraTools: extraTools.length,
+    mcpToolNames: mcpTools.map(t => t.name),
+  });
+
+  // 7. 转换历史消息为 LangChain 格式（短期记忆）
   const historyMessages = convertHistoryToMessages(history);
 
-  // 7. 调用 runWithSkills
+  // 8. 调用 runWithSkills
   return runWithSkills({
     chat,
     skills,

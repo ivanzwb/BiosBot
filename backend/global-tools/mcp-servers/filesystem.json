@@ -1,0 +1,13 @@
+{
+  "id": "filesystem",
+  "type": "local",
+  "enabled": true,
+  "command": "npx",
+  "args": [
+    "-y",
+    "@modelcontextprotocol/server-filesystem",
+    "C:/"
+  ],
+  "env": {},
+  "headers": {}
+}

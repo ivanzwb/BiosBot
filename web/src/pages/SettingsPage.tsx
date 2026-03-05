@@ -84,12 +84,46 @@ export default function SettingsPage() {
   const [globalHeadersText, setGlobalHeadersText] = useState('');
   const [globalScriptFile, setGlobalScriptFile] = useState<File | null>(null);
 
+  // MCP Server state
+  const [mcpServers, setMcpServers] = useState<api.McpServerConfig[]>([]);
+  const [mcpLoadingServers, setMcpLoadingServers] = useState(false);
+  const [mcpShowForm, setMcpShowForm] = useState(false);
+  const [mcpEditingServer, setMcpEditingServer] = useState<api.McpServerConfig | null>(null);
+  const [mcpDraft, setMcpDraft] = useState<api.McpServerConfig>({
+    id: '', type: 'local', command: '', args: [], env: {}, enabled: true,
+  });
+  const [mcpSavingServer, setMcpSavingServer] = useState(false);
+  const [mcpArgsText, setMcpArgsText] = useState('');
+  const [mcpEnvText, setMcpEnvText] = useState('');
+  const [mcpHeadersText, setMcpHeadersText] = useState('');
+  const [mcpServerTools, setMcpServerTools] = useState<Record<string, api.McpTool[]>>({});
+  const [mcpLoadingTools, setMcpLoadingTools] = useState<Record<string, boolean>>({});
+  const [mcpToolsExpanded, setMcpToolsExpanded] = useState<Record<string, boolean>>({});
+  // MCP Package Install
+  const [mcpShowInstall, setMcpShowInstall] = useState(false);
+  const [mcpInstallPackage, setMcpInstallPackage] = useState('');
+  const [mcpInstallRegistry, setMcpInstallRegistry] = useState('');
+  const [mcpInstalling, setMcpInstalling] = useState(false);
+  const [mcpInstalledPackages, setMcpInstalledPackages] = useState<api.InstalledMcpPackage[]>([]);
+  const [mcpInstallError, setMcpInstallError] = useState<string | null>(null);
+  const [mcpInstallNpmLog, setMcpInstallNpmLog] = useState<string | null>(null);
+  const [mcpShowNpmLog, setMcpShowNpmLog] = useState(false);
+  // MCP Tools 探测
+  const [mcpProbing, setMcpProbing] = useState(false);
+  const [mcpProbedTools, setMcpProbedTools] = useState<api.McpToolInfo[]>([]);
+  const [mcpProbedPackage, setMcpProbedPackage] = useState<string | null>(null);
+  const [mcpProbeError, setMcpProbeError] = useState<string | null>(null);
+  // MCP Server 测试
+  const [mcpTesting, setMcpTesting] = useState(false);
+  const [mcpTestResult, setMcpTestResult] = useState<api.McpTestResult | null>(null);
+
   useEffect(() => {
     loadData();
     loadProxyDocs();
     loadProxySkills();
     loadProxyTools();
     loadGlobalTools();
+    loadMcpServers();
   }, []);
 
   const loadData = async () => {
@@ -277,16 +311,6 @@ export default function SettingsPage() {
     }
   };
 
-  const handleProxyClearKb = async () => {
-    try {
-      await api.clearKnowledge('proxy-agent');
-      flash('已清空知识库');
-      setProxyDocs([]);
-      setProxyKbHasData(false);
-    } catch (err) {
-      flash(`❌ ${err instanceof Error ? err.message : String(err)}`);
-    }
-  };
 
   const handleProxyImport = async () => {
     setProxyImporting(true);
@@ -653,6 +677,206 @@ export default function SettingsPage() {
 
   const removeGlobalToolParam = (idx: number) => {
     setGlobalToolDraft({ ...globalToolDraft, parameters: globalToolDraft.parameters.filter((_, i) => i !== idx) });
+  };
+
+  // ============================================================
+  // MCP Server 管理
+  // ============================================================
+
+  const loadMcpServers = async () => {
+    setMcpLoadingServers(true);
+    try {
+      const list = await api.listMcpServers();
+      setMcpServers(list);
+    } catch { setMcpServers([]); }
+    setMcpLoadingServers(false);
+  };
+
+  const openMcpServerCreate = () => {
+    setMcpEditingServer(null);
+    setMcpDraft({ id: '', type: 'local', command: '', args: [], env: {}, url: '', headers: {}, enabled: true });
+    setMcpArgsText('');
+    setMcpEnvText('');
+    setMcpHeadersText('');
+    // 重置安装相关状态
+    setMcpShowInstall(false);
+    setMcpInstallPackage('');
+    setMcpInstallError(null);
+    setMcpInstallNpmLog(null);
+    setMcpShowNpmLog(false);
+    setMcpProbedTools([]);
+    setMcpProbedPackage(null);
+    setMcpProbeError(null);
+    setMcpShowForm(true);
+  };
+
+  const openMcpServerEdit = (server: api.McpServerConfig) => {
+    setMcpEditingServer(server);
+    setMcpDraft({ ...server });
+    setMcpArgsText((server.args || []).join('\n'));
+    setMcpEnvText(Object.entries(server.env || {}).map(([k, v]) => `${k}=${v}`).join('\n'));
+    setMcpHeadersText(Object.entries(server.headers || {}).map(([k, v]) => `${k}=${v}`).join('\n'));
+    setMcpShowForm(true);
+  };
+
+  const handleMcpSaveServer = async () => {
+    const serverType = mcpDraft.type || 'local';
+    if (!mcpDraft.id) {
+      flash('❌ ID 为必填');
+      return;
+    }
+    if (serverType === 'local' && !mcpDraft.command) {
+      flash('❌ 本地 MCP Server 需要填写启动命令');
+      return;
+    }
+    if (serverType === 'remote' && !mcpDraft.url) {
+      flash('❌ 远程 MCP Server 需要填写 URL');
+      return;
+    }
+
+    setMcpSavingServer(true);
+    try {
+      // 解析 args 和 env
+      const args = mcpArgsText.split('\n').map(s => s.trim()).filter(Boolean);
+      const env: Record<string, string> = {};
+      mcpEnvText.split('\n').forEach(line => {
+        const idx = line.indexOf('=');
+        if (idx > 0) {
+          env[line.slice(0, idx).trim()] = line.slice(idx + 1).trim();
+        }
+      });
+      const headers: Record<string, string> = {};
+      mcpHeadersText.split('\n').forEach(line => {
+        const idx = line.indexOf('=');
+        if (idx > 0) {
+          headers[line.slice(0, idx).trim()] = line.slice(idx + 1).trim();
+        }
+      });
+
+      const serverToSave: api.McpServerConfig = {
+        ...mcpDraft,
+        args,
+        env,
+        headers,
+      };
+
+      if (mcpEditingServer) {
+        await api.updateMcpServer(mcpDraft.id, serverToSave);
+        flash('✅ MCP Server 已更新');
+      } else {
+        await api.createMcpServer(serverToSave);
+        flash('✅ MCP Server 已创建');
+      }
+
+      setMcpShowForm(false);
+      loadMcpServers();
+    } catch (err) {
+      flash(`❌ ${err instanceof Error ? err.message : String(err)}`);
+    } finally { setMcpSavingServer(false); }
+  };
+
+  const handleMcpDeleteServer = async (serverId: string) => {
+    if (!confirm('确认删除此 MCP Server？')) return;
+    try {
+      await api.deleteMcpServer(serverId);
+      setMcpServers((prev) => prev.filter((s) => s.id !== serverId));
+      flash('✅ 已删除');
+    } catch (err) {
+      flash(`❌ ${err instanceof Error ? err.message : String(err)}`);
+    }
+  };
+
+  const handleMcpToggleServer = async (server: api.McpServerConfig) => {
+    try {
+      await api.updateMcpServer(server.id, { enabled: !server.enabled });
+      loadMcpServers();
+    } catch (err) {
+      flash(`❌ ${err instanceof Error ? err.message : String(err)}`);
+    }
+  };
+
+  const loadMcpServerToolsList = async (serverId: string) => {
+    // 如果已经有工具列表，切换展开/收起状态
+    if (mcpServerTools[serverId] && mcpServerTools[serverId].length > 0) {
+      setMcpToolsExpanded(prev => ({ ...prev, [serverId]: !prev[serverId] }));
+      return;
+    }
+    setMcpLoadingTools(prev => ({ ...prev, [serverId]: true }));
+    try {
+      const tools = await api.getMcpServerTools(serverId);
+      setMcpServerTools(prev => ({ ...prev, [serverId]: tools }));
+      // 加载完成后自动展开
+      setMcpToolsExpanded(prev => ({ ...prev, [serverId]: true }));
+    } catch (err) {
+      flash(`❌ 获取工具列表失败: ${err instanceof Error ? err.message : String(err)}`);
+    }
+    setMcpLoadingTools(prev => ({ ...prev, [serverId]: false }));
+  };
+
+  const loadInstalledPackages = async () => {
+    try {
+      const packages = await api.listInstalledMcpPackages();
+      setMcpInstalledPackages(packages);
+    } catch { setMcpInstalledPackages([]); }
+  };
+
+  const handleMcpInstallPackage = async () => {
+    if (!mcpInstallPackage.trim()) {
+      flash('❌ 请输入包名');
+      return;
+    }
+    setMcpInstalling(true);
+    setMcpInstallError(null);
+    setMcpInstallNpmLog(null);
+    setMcpShowNpmLog(false);
+    setMcpProbedTools([]);
+    setMcpProbedPackage(null);
+    setMcpProbeError(null);
+    try {
+      const result = await api.installMcpPackage(
+        mcpInstallPackage.trim(),
+        mcpInstallRegistry.trim() || undefined
+      );
+      if (result.success) {
+        flash(`✅ ${result.packageName} 安装成功，正在检测可用 Tools...`);
+        setMcpInstallError(null);
+        setMcpInstallNpmLog(null);
+        loadInstalledPackages();
+        // 安装成功后自动探测 tools
+        setMcpProbing(true);
+        try {
+          const probeResult = await api.probeMcpPackageTools(result.packageName);
+          if (probeResult.success && probeResult.tools.length > 0) {
+            setMcpProbedTools(probeResult.tools);
+            setMcpProbedPackage(result.packageName);
+            flash(`🔧 检测到 ${probeResult.tools.length} 个可用 Tools`);
+          } else if (probeResult.error) {
+            setMcpProbeError(probeResult.error);
+            flash(`⚠️ Tools 探测失败: ${probeResult.error}`);
+          } else {
+            setMcpProbeError('未检测到可用 Tools（可能需要配置启动参数）');
+          }
+        } catch (probeErr) {
+          const msg = probeErr instanceof Error ? probeErr.message : String(probeErr);
+          setMcpProbeError(msg);
+        } finally {
+          setMcpProbing(false);
+        }
+        setMcpInstallPackage('');
+      } else {
+        const errorMsg = result.stderr || result.message || '未知错误';
+        setMcpInstallError(errorMsg);
+        setMcpInstallNpmLog(result.npmLog || null);
+        flash(`❌ 安装失败`);
+      }
+    } catch (err) {
+      const errorMsg = err instanceof Error ? err.message : String(err);
+      setMcpInstallError(errorMsg);
+      setMcpInstallNpmLog(null);
+      flash(`❌ 安装失败`);
+    } finally {
+      setMcpInstalling(false);
+    }
   };
 
   /* ——— Render helpers ——— */
@@ -1514,6 +1738,509 @@ export default function SettingsPage() {
                   <button className={styles.skillEditBtn} onClick={() => openGlobalToolEdit(tool)} title="编辑">✏️</button>
                   <button className={styles.kbDocDelete} onClick={() => handleGlobalDeleteTool(tool.id)} title="删除">×</button>
                 </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </section>
+
+      {/* ==================== MCP Server ==================== */}
+      <section className={styles.section}>
+        <div className={styles.sectionHeader}>
+          <div>
+            <h2>MCP Server</h2>
+            <p className={styles.hint}>
+              通过 MCP (Model Context Protocol) 连接外部工具服务器，如文件系统、数据库等。
+            </p>
+          </div>
+          <button className={styles.addBtn} onClick={openMcpServerCreate}>
+            + 添加 MCP Server
+          </button>
+        </div>
+
+        {mcpShowForm && (
+          <div className={styles.kbImportForm}>
+            <h3>{mcpEditingServer ? '编辑 MCP Server' : '添加 MCP Server'}</h3>
+            <label className={styles.field}>
+              <span>Server ID（唯一标识）</span>
+              <input
+                type="text"
+                value={mcpDraft.id}
+                onChange={(e) => setMcpDraft({ ...mcpDraft, id: e.target.value })}
+                className={styles.input}
+                placeholder="e.g. filesystem"
+                disabled={!!mcpEditingServer}
+              />
+            </label>
+            <label className={styles.field}>
+              <span>服务器类型</span>
+              <select
+                value={mcpDraft.type || 'local'}
+                onChange={(e) => setMcpDraft({ ...mcpDraft, type: e.target.value as api.McpServerType })}
+                className={styles.input}
+                disabled={!!mcpEditingServer}
+              >
+                <option value="local">📦 本地 MCP Server（通过 npm 包启动进程）</option>
+                <option value="remote">🌐 远程 MCP Server（通过 SSE/HTTP 连接）</option>
+              </select>
+            </label>
+
+            {/* 本地 MCP Server 配置 */}
+            {(mcpDraft.type || 'local') === 'local' && (
+              <>
+                {/* 安装 MCP 包区域 */}
+                <div style={{
+                  backgroundColor: '#f0f9ff',
+                  border: '1px solid #0ea5e9',
+                  borderRadius: '8px',
+                  padding: '12px',
+                  marginBottom: '16px',
+                }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: mcpShowInstall ? '12px' : 0 }}>
+                    <span style={{ fontWeight: 500, color: '#0369a1' }}>📦 安装 npm 包（可选）</span>
+                    <button
+                      onClick={() => { setMcpShowInstall(!mcpShowInstall); if (!mcpShowInstall) loadInstalledPackages(); }}
+                      style={{
+                        background: mcpShowInstall ? '#e0f2fe' : '#0ea5e9',
+                        color: mcpShowInstall ? '#0369a1' : 'white',
+                        border: 'none',
+                        padding: '4px 12px',
+                        borderRadius: '4px',
+                        cursor: 'pointer',
+                        fontSize: '12px',
+                      }}
+                    >
+                      {mcpShowInstall ? '收起' : '展开'}
+                    </button>
+                  </div>
+                  {mcpShowInstall && (
+                    <>
+                      {mcpInstallError && (
+                        <div style={{
+                          backgroundColor: '#fee2e2',
+                          border: '1px solid #ef4444',
+                          borderRadius: '6px',
+                          padding: '12px',
+                          marginBottom: '12px',
+                          color: '#dc2626',
+                          fontSize: '13px',
+                        }}>
+                          <strong>❌ 安装失败：</strong>
+                          <pre style={{ margin: '8px 0 0', fontSize: '12px', whiteSpace: 'pre-wrap', maxHeight: '150px', overflow: 'auto' }}>{mcpInstallError}</pre>
+                          {mcpInstallNpmLog && (
+                            <div style={{ marginTop: '12px' }}>
+                              <button
+                                onClick={() => setMcpShowNpmLog(!mcpShowNpmLog)}
+                                style={{
+                                  background: '#dc2626',
+                                  color: 'white',
+                                  border: 'none',
+                                  padding: '4px 10px',
+                                  borderRadius: '4px',
+                                  cursor: 'pointer',
+                                  fontSize: '12px',
+                                }}
+                              >
+                                {mcpShowNpmLog ? '隐藏详细日志' : '查看详细 npm 日志'}
+                              </button>
+                              {mcpShowNpmLog && (
+                                <pre style={{
+                                  marginTop: '8px',
+                                  padding: '10px',
+                                  backgroundColor: '#1e1e1e',
+                                  color: '#d4d4d4',
+                                  borderRadius: '4px',
+                                  fontSize: '11px',
+                                  maxHeight: '300px',
+                                  overflow: 'auto',
+                                  whiteSpace: 'pre-wrap',
+                                  wordBreak: 'break-all',
+                                }}>
+                                  {mcpInstallNpmLog}
+                                </pre>
+                              )}
+                            </div>
+                          )}
+                        </div>
+                      )}
+                      {mcpProbing && (
+                        <div style={{
+                          backgroundColor: '#fef3c7',
+                          border: '1px solid #f59e0b',
+                          borderRadius: '6px',
+                          padding: '12px',
+                          marginBottom: '12px',
+                          color: '#92400e',
+                          fontSize: '13px',
+                        }}>
+                          🔍 正在检测 MCP Tools...
+                        </div>
+                      )}
+                      {mcpProbedTools.length > 0 && mcpProbedPackage && (
+                        <div style={{
+                          backgroundColor: '#d1fae5',
+                          border: '1px solid #10b981',
+                          borderRadius: '6px',
+                          padding: '12px',
+                          marginBottom: '12px',
+                          color: '#065f46',
+                          fontSize: '13px',
+                        }}>
+                          <strong>✅ {mcpProbedPackage} 安装成功！</strong>
+                          <p style={{ margin: '8px 0 4px', fontWeight: 500 }}>检测到 {mcpProbedTools.length} 个可用 Tools：</p>
+                          <ul style={{ margin: 0, paddingLeft: '20px', maxHeight: '150px', overflow: 'auto' }}>
+                            {mcpProbedTools.map(tool => (
+                              <li key={tool.name} style={{ marginBottom: '4px' }}>
+                                <code style={{
+                                  backgroundColor: '#047857',
+                                  color: 'white',
+                                  padding: '1px 6px',
+                                  borderRadius: '3px',
+                                  fontSize: '11px'
+                                }}>{tool.name}</code>
+                                {tool.description && (
+                                  <span style={{ marginLeft: '6px', color: '#065f46', fontSize: '11px' }}>
+                                    — {tool.description}
+                                  </span>
+                                )}
+                              </li>
+                            ))}
+                          </ul>
+                        </div>
+                      )}
+                      {mcpProbeError && !mcpProbedTools.length && (
+                        <div style={{
+                          backgroundColor: '#fef3c7',
+                          border: '1px solid #f59e0b',
+                          borderRadius: '6px',
+                          padding: '12px',
+                          marginBottom: '12px',
+                          color: '#92400e',
+                          fontSize: '13px',
+                        }}>
+                          <strong>⚠️ 包已安装，但 Tools 探测失败</strong>
+                          <pre style={{ margin: '8px 0 0', fontSize: '11px', whiteSpace: 'pre-wrap' }}>{mcpProbeError}</pre>
+                        </div>
+                      )}
+                      <div style={{ display: 'flex', gap: '8px', marginBottom: '8px' }}>
+                        <input
+                          type="text"
+                          value={mcpInstallPackage}
+                          onChange={(e) => setMcpInstallPackage(e.target.value)}
+                          className={styles.input}
+                          placeholder="包名 e.g. @modelcontextprotocol/server-filesystem"
+                          style={{ flex: 1 }}
+                        />
+                        <button
+                          onClick={handleMcpInstallPackage}
+                          disabled={mcpInstalling || !mcpInstallPackage.trim()}
+                          style={{
+                            backgroundColor: mcpInstalling ? '#94a3b8' : '#0ea5e9',
+                            color: 'white',
+                            border: 'none',
+                            padding: '8px 16px',
+                            borderRadius: '6px',
+                            cursor: mcpInstalling ? 'not-allowed' : 'pointer',
+                            fontSize: '13px',
+                            whiteSpace: 'nowrap',
+                          }}
+                        >
+                          {mcpInstalling ? '安装中...' : '安装'}
+                        </button>
+                      </div>
+                      <p style={{ fontSize: '11px', color: '#64748b', margin: '4px 0 8px' }}>
+                        常用: @modelcontextprotocol/server-filesystem, server-github, server-puppeteer
+                      </p>
+                      {mcpInstalledPackages.length > 0 && (
+                        <details style={{ fontSize: '12px', color: '#475569' }}>
+                          <summary style={{ cursor: 'pointer' }}>已安装的 MCP 包 ({mcpInstalledPackages.length})</summary>
+                          <ul style={{ margin: '4px 0 0', paddingLeft: '20px' }}>
+                            {mcpInstalledPackages.map(pkg => (
+                              <li key={pkg.name}>{pkg.name} <span style={{ color: '#888' }}>({pkg.version})</span></li>
+                            ))}
+                          </ul>
+                        </details>
+                      )}
+                    </>
+                  )}
+                </div>
+
+                <label className={styles.field}>
+                  <span>启动命令 *</span>
+                  <input
+                    type="text"
+                    value={mcpDraft.command || ''}
+                    onChange={(e) => setMcpDraft({ ...mcpDraft, command: e.target.value })}
+                    className={styles.input}
+                    placeholder="e.g. npx"
+                  />
+                </label>
+                <label className={styles.field}>
+                  <span>命令参数（每行一个）</span>
+                  <textarea
+                    value={mcpArgsText}
+                    onChange={(e) => setMcpArgsText(e.target.value)}
+                    className={styles.input}
+                    rows={4}
+                    placeholder={`-y\n@modelcontextprotocol/server-filesystem\nC:/Projects`}
+                  />
+                </label>
+                <label className={styles.field}>
+                  <span>环境变量（每行 KEY=VALUE）</span>
+                  <textarea
+                    value={mcpEnvText}
+                    onChange={(e) => setMcpEnvText(e.target.value)}
+                    className={styles.input}
+                    rows={3}
+                    placeholder={`API_KEY=your-key\nDEBUG=true`}
+                  />
+                </label>
+                <p className={styles.hint}>
+                  示例参数：<code>-y</code>、<code>@modelcontextprotocol/server-filesystem</code>、<code>C:/Projects</code>
+                </p>
+              </>
+            )}
+
+            {/* 远程 MCP Server 配置 */}
+            {mcpDraft.type === 'remote' && (
+              <>
+                <label className={styles.field}>
+                  <span>服务器 URL *</span>
+                  <input
+                    type="text"
+                    value={mcpDraft.url || ''}
+                    onChange={(e) => setMcpDraft({ ...mcpDraft, url: e.target.value })}
+                    className={styles.input}
+                    placeholder="e.g. https://mcp.example.com/sse"
+                  />
+                </label>
+                <label className={styles.field}>
+                  <span>请求头（每行 KEY=VALUE，用于认证等）</span>
+                  <textarea
+                    value={mcpHeadersText}
+                    onChange={(e) => setMcpHeadersText(e.target.value)}
+                    className={styles.input}
+                    rows={3}
+                    placeholder={`Authorization=Bearer your-token\nX-API-Key=your-key`}
+                  />
+                </label>
+                <p className={styles.hint}>
+                  🌐 远程 MCP Server 通过 SSE (Server-Sent Events) 协议连接。
+                  确保服务器支持 MCP over SSE 协议。
+                </p>
+              </>
+            )}
+
+            <label className={styles.field} style={{ flexDirection: 'row', alignItems: 'center', gap: '8px' }}>
+              <span>启用</span>
+              <input
+                type="checkbox"
+                checked={mcpDraft.enabled !== false}
+                onChange={(e) => setMcpDraft({ ...mcpDraft, enabled: e.target.checked })}
+              />
+            </label>
+            <p className={styles.hint}>
+              常用 MCP Server: @modelcontextprotocol/server-filesystem（文件系统）、
+              @modelcontextprotocol/server-github（GitHub）等。
+              <a href="https://modelcontextprotocol.io/" target="_blank" rel="noreferrer"> 了解更多 →</a>
+            </p>
+            {/* 测试结果显示 */}
+            {mcpTestResult && (
+              <div style={{
+                marginTop: '12px',
+                marginBottom: '12px',
+                padding: '12px',
+                borderRadius: '6px',
+                backgroundColor: mcpTestResult.success ? '#d1fae5' : '#fee2e2',
+                border: `1px solid ${mcpTestResult.success ? '#10b981' : '#ef4444'}`,
+              }}>
+                {mcpTestResult.success ? (
+                  <>
+                    <strong style={{ color: '#065f46' }}>✅ 测试成功！</strong>
+                    <p style={{ margin: '8px 0 4px', fontWeight: 500, color: '#065f46' }}>
+                      检测到 {mcpTestResult.tools.length} 个可用 Tools：
+                    </p>
+                    {mcpTestResult.tools.length > 0 && (
+                      <ul style={{ margin: 0, paddingLeft: '20px', maxHeight: '150px', overflow: 'auto', fontSize: '12px' }}>
+                        {mcpTestResult.tools.map(tool => (
+                          <li key={tool.name} style={{ marginBottom: '2px' }}>
+                            <code style={{
+                              backgroundColor: '#047857',
+                              color: 'white',
+                              padding: '1px 6px',
+                              borderRadius: '3px',
+                              fontSize: '11px'
+                            }}>{tool.name}</code>
+                            {tool.description && (
+                              <span style={{ marginLeft: '6px', color: '#065f46', fontSize: '11px' }}>
+                                — {tool.description.slice(0, 60)}{tool.description.length > 60 ? '...' : ''}
+                              </span>
+                            )}
+                          </li>
+                        ))}
+                      </ul>
+                    )}
+                  </>
+                ) : (
+                  <>
+                    <strong style={{ color: '#dc2626' }}>❌ 测试失败</strong>
+                    <pre style={{
+                      margin: '8px 0 0',
+                      fontSize: '12px',
+                      whiteSpace: 'pre-wrap',
+                      color: '#dc2626',
+                      maxHeight: '150px',
+                      overflow: 'auto',
+                    }}>{mcpTestResult.error}</pre>
+                  </>
+                )}
+              </div>
+            )}
+            <div className={styles.kbImportActions}>
+              <button
+                className={styles.saveBtn}
+                style={{ backgroundColor: '#6366f1' }}
+                onClick={async () => {
+                  const serverType = mcpDraft.type || 'local';
+                  if (serverType === 'local' && !mcpDraft.command) {
+                    flash('❌ 本地 MCP Server 需要填写启动命令');
+                    return;
+                  }
+                  if (serverType === 'remote' && !mcpDraft.url) {
+                    flash('❌ 远程 MCP Server 需要填写 URL');
+                    return;
+                  }
+                  setMcpTesting(true);
+                  setMcpTestResult(null);
+                  try {
+                    const testConfig: api.McpServerConfig = {
+                      ...mcpDraft,
+                      args: mcpArgsText.split('\n').map(s => s.trim()).filter(Boolean),
+                      env: mcpEnvText.split('\n').filter(l => l.includes('=')).reduce((acc, l) => {
+                        const [k, ...v] = l.split('=');
+                        acc[k.trim()] = v.join('=').trim();
+                        return acc;
+                      }, {} as Record<string, string>),
+                      headers: mcpHeadersText.split('\n').filter(l => l.includes('=')).reduce((acc, l) => {
+                        const [k, ...v] = l.split('=');
+                        acc[k.trim()] = v.join('=').trim();
+                        return acc;
+                      }, {} as Record<string, string>),
+                    };
+                    const result = await api.testMcpServer(testConfig);
+                    setMcpTestResult(result);
+                    if (result.success) {
+                      flash(`✅ 测试成功，发现 ${result.tools.length} 个 Tools`);
+                    } else {
+                      flash('❌ 测试失败: ' + result.error);
+                    }
+                  } catch (e) {
+                    const err = e instanceof Error ? e.message : String(e);
+                    setMcpTestResult({ success: false, serverId: mcpDraft.id, testTime: new Date().toISOString(), tools: [], error: err });
+                    flash('❌ 测试出错: ' + err);
+                  } finally {
+                    setMcpTesting(false);
+                  }
+                }}
+                disabled={mcpTesting || !mcpDraft.id}
+              >
+                {mcpTesting ? '测试中…' : '🔍 测试连接'}
+              </button>
+              <button className={styles.saveBtn} onClick={handleMcpSaveServer} disabled={mcpSavingServer}>
+                {mcpSavingServer ? '保存中…' : mcpEditingServer ? '更新' : '创建'}
+              </button>
+              <button className={styles.cancelBtn} onClick={() => { setMcpShowForm(false); setMcpTestResult(null); }}>取消</button>
+            </div>
+          </div>
+        )}
+
+        {mcpLoadingServers ? (
+          <p className={styles.hint}>加载 MCP Server 中…</p>
+        ) : mcpServers.length === 0 && !mcpShowForm ? (
+          <p className={styles.hint}>暂无 MCP Server。点击「添加 MCP Server」配置新的服务器。</p>
+        ) : (
+          <div className={styles.kbDocList}>
+            {mcpServers.map((server) => (
+              <div key={server.id} className={styles.skillItem} style={{ flexWrap: 'wrap' }}>
+                <div className={styles.kbDocInfo}>
+                  <span className={styles.kbDocTitle}>
+                    {server.type === 'remote' ? '🌐' : '📦'} {server.id}
+                  </span>
+                  <span className={styles.kbDocChunks}>
+                    {server.type === 'remote'
+                      ? server.url
+                      : `${server.command} ${(server.args || []).slice(0, 2).join(' ')}`}
+                    {(server.args || []).length > 2 && '...'}
+                  </span>
+                </div>
+                <div className={styles.skillActions}>
+                  <button
+                    className={`${styles.toolToggleBtn} ${server.enabled !== false ? styles.toolEnabled : ''}`}
+                    onClick={() => handleMcpToggleServer(server)}
+                    title={server.enabled !== false ? '已启用' : '已禁用'}
+                  >
+                    {server.enabled !== false ? '✅' : '⚪'}
+                  </button>
+                  <button
+                    className={styles.skillEditBtn}
+                    onClick={() => loadMcpServerToolsList(server.id)}
+                    title="查看工具"
+                    disabled={server.enabled === false || mcpLoadingTools[server.id]}
+                  >
+                    {mcpLoadingTools[server.id] ? '⏳' : '🛠️'}
+                  </button>
+                  <button className={styles.skillEditBtn} onClick={() => openMcpServerEdit(server)} title="编辑">✏️</button>
+                  <button className={styles.kbDocDelete} onClick={() => handleMcpDeleteServer(server.id)} title="删除">×</button>
+                </div>
+                {/* 显示该 server 的工具列表 - 新的一行 */}
+                {mcpServerTools[server.id] && mcpServerTools[server.id].length > 0 && (
+                  <div style={{
+                    width: '100%',
+                    marginTop: '8px',
+                    padding: '8px 12px',
+                    backgroundColor: '#f8fafc',
+                    borderRadius: '6px',
+                    border: '1px solid #e2e8f0',
+                  }}>
+                    <div
+                      style={{
+                        display: 'flex',
+                        justifyContent: 'space-between',
+                        alignItems: 'center',
+                        cursor: 'pointer',
+                      }}
+                      onClick={() => setMcpToolsExpanded(prev => ({ ...prev, [server.id]: !prev[server.id] }))}
+                    >
+                      <span style={{ fontSize: '12px', color: '#475569', fontWeight: 500 }}>
+                        🛠️ 提供的工具 ({mcpServerTools[server.id].length})
+                      </span>
+                      <span style={{ fontSize: '12px', color: '#94a3b8' }}>
+                        {mcpToolsExpanded[server.id] ? '▲ 收起' : '▼ 展开'}
+                      </span>
+                    </div>
+                    {mcpToolsExpanded[server.id] && (
+                      <ul style={{
+                        margin: '8px 0 0',
+                        paddingLeft: '20px',
+                        fontSize: '12px',
+                        color: '#334155',
+                        maxHeight: '200px',
+                        overflow: 'auto',
+                      }}>
+                        {mcpServerTools[server.id].map((tool) => (
+                          <li key={tool.name} style={{ marginBottom: '4px' }}>
+                            <strong>{tool.name}</strong>
+                            {tool.description && (
+                              <span style={{ color: '#64748b' }}>
+                                {' '}— {tool.description.slice(0, 80)}{tool.description.length > 80 ? '...' : ''}
+                              </span>
+                            )}
+                          </li>
+                        ))}
+                      </ul>
+                    )}
+                  </div>
+                )}
               </div>
             ))}
           </div>

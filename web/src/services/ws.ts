@@ -18,9 +18,13 @@ let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
 function getWsUrl(): string {
   const proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
   const host = location.hostname;
-  // 开发模式和预览模式都连接后端端口 3000
+  // 开发模式、预览模式(4173)都连接后端端口 3000
   // 生产部署时假设前后端在同一端口（nginx 代理）
-  const port = import.meta.env.DEV || import.meta.env.MODE === 'development' ? '3000' : (location.port || '3000');
+  const isDevOrPreview = import.meta.env.DEV ||
+    import.meta.env.MODE === 'development' ||
+    location.port === '4173' || // vite preview default port
+    location.port === '5173';   // vite dev default port
+  const port = isDevOrPreview ? '3000' : (location.port || '3000');
   return `${proto}//${host}:${port}/ws`;
 }
 

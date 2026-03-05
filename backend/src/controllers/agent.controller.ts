@@ -835,7 +835,8 @@ export function uploadToolScript(req: Request, res: Response, next: NextFunction
 // Global Tools CRUD
 // ============================================================
 
-import { loadGlobalToolConfigs, getGlobalToolsDir } from '../agents/global-tool-loader';
+import { loadGlobalToolConfigs, getGlobalToolsDir, loadMcpServerConfigs, getMcpServersDir } from '../agents/global-tool-loader';
+import { McpServerConfig, listMcpTools, closeMcpClient } from '../agents/mcp-client';
 
 /**
  * GET /api/global-tools
@@ -1062,6 +1063,476 @@ export function uploadGlobalToolScript(req: Request, res: Response, next: NextFu
       scriptFile: req.file.originalname,
       size: req.file.size,
       tool: cfg,
+    });
+  } catch (err) {
+    next(err);
+  }
+}
+
+// ============================================================
+// MCP Server CRUD
+// ============================================================
+
+/**
+ * GET /api/mcp-servers
+ *
+ * 列出所有 MCP Server 配置。
+ */
+export function listMcpServers(_req: Request, res: Response, next: NextFunction): void {
+  try {
+    const configs = loadMcpServerConfigs();
+    res.json(configs);
+  } catch (err) {
+    next(err);
+  }
+}
+
+/**
+ * GET /api/mcp-servers/:serverId/tools
+ *
+ * 列出指定 MCP Server 提供的工具。
+ */
+export async function getMcpServerTools(req: Request, res: Response, next: NextFunction): Promise<void> {
+  try {
+    const serverId = paramStr(req.params.serverId);
+    const configs = loadMcpServerConfigs();
+    const config = configs.find((c) => c.id === serverId);
+
+    if (!config) {
+      res.status(404).json({ code: 'NOT_FOUND', message: `MCP server "${serverId}" not found` });
+      return;
+    }
+
+    if (config.enabled === false) {
+      res.status(400).json({ code: 'DISABLED', message: `MCP server "${serverId}" is disabled` });
+      return;
+    }
+
+    const tools = await listMcpTools(config);
+    res.json(tools);
+  } catch (err) {
+    next(err);
+  }
+}
+
+/**
+ * POST /api/mcp-servers
+ *
+ * 创建新的 MCP Server 配置。
+ */
+export function createMcpServer(req: Request, res: Response, next: NextFunction): void {
+  try {
+    const mcpServersDir = getMcpServersDir();
+
+    const { id, type, command, args, env, url, headers, enabled } = req.body;
+    const serverType = type || 'local';
+
+    // 校验必填字段
+    if (!id) {
+      res.status(400).json({ code: 'INVALID_PARAMS', message: 'id is required' });
+      return;
+    }
+    if (serverType === 'local' && !command) {
+      res.status(400).json({ code: 'INVALID_PARAMS', message: 'command is required for local MCP server' });
+      return;
+    }
+    if (serverType === 'remote' && !url) {
+      res.status(400).json({ code: 'INVALID_PARAMS', message: 'url is required for remote MCP server' });
+      return;
+    }
+
+    if (!fs.existsSync(mcpServersDir)) {
+      fs.mkdirSync(mcpServersDir, { recursive: true });
+    }
+
+    const filePath = path.join(mcpServersDir, `${id}.json`);
+    if (fs.existsSync(filePath)) {
+      res.status(409).json({ code: 'CONFLICT', message: `MCP server "${id}" already exists` });
+      return;
+    }
+
+    const serverConfig: McpServerConfig = {
+      id,
+      type: serverType,
+      enabled: enabled !== false,
+      // 本地 MCP Server 字段
+      ...(serverType === 'local' && {
+        command,
+        args: args || [],
+        env: env || {},
+      }),
+      // 远程 MCP Server 字段
+      ...(serverType === 'remote' && {
+        url,
+        headers: headers || {},
+      }),
+    };
+
+    fs.writeFileSync(filePath, JSON.stringify(serverConfig, null, 2) + '\n', 'utf-8');
+
+    logger.info('agent.controller: created MCP server', { serverId: id });
+    res.status(201).json({ success: true, server: serverConfig });
+  } catch (err) {
+    next(err);
+  }
+}
+
+/**
+ * PUT /api/mcp-servers/:serverId
+ *
+ * 更新已有的 MCP Server 配置。
+ */
+export async function updateMcpServer(req: Request, res: Response, next: NextFunction): Promise<void> {
+  try {
+    const mcpServersDir = getMcpServersDir();
+    const serverId = paramStr(req.params.serverId);
+    const filePath = path.join(mcpServersDir, `${serverId}.json`);
+
+    if (!fs.existsSync(filePath)) {
+      res.status(404).json({ code: 'NOT_FOUND', message: `MCP server "${serverId}" not found` });
+      return;
+    }
+
+    // 读取现有配置并合并
+    let existing: McpServerConfig;
+    try {
+      existing = JSON.parse(fs.readFileSync(filePath, 'utf-8'));
+    } catch {
+      existing = { id: serverId, type: 'local' };
+    }
+
+    const { type, command, args, env, url, headers, enabled } = req.body;
+    const merged: McpServerConfig = {
+      ...existing,
+      ...(type !== undefined && { type }),
+      ...(command !== undefined && { command }),
+      ...(args !== undefined && { args }),
+      ...(env !== undefined && { env }),
+      ...(url !== undefined && { url }),
+      ...(headers !== undefined && { headers }),
+      ...(enabled !== undefined && { enabled }),
+    };
+
+    fs.writeFileSync(filePath, JSON.stringify(merged, null, 2) + '\n', 'utf-8');
+
+    // 如果 MCP 客户端已连接，关闭连接以便下次使用新配置
+    await closeMcpClient(serverId);
+
+    logger.info('agent.controller: updated MCP server', { serverId });
+    res.json({ success: true, server: merged });
+  } catch (err) {
+    next(err);
+  }
+}
+
+/**
+ * DELETE /api/mcp-servers/:serverId
+ *
+ * 删除指定的 MCP Server 配置。
+ */
+export async function deleteMcpServer(req: Request, res: Response, next: NextFunction): Promise<void> {
+  try {
+    const mcpServersDir = getMcpServersDir();
+    const serverId = paramStr(req.params.serverId);
+    const filePath = path.join(mcpServersDir, `${serverId}.json`);
+
+    if (!fs.existsSync(filePath)) {
+      res.status(404).json({ code: 'NOT_FOUND', message: `MCP server "${serverId}" not found` });
+      return;
+    }
+
+    // 关闭 MCP 客户端连接
+    await closeMcpClient(serverId);
+
+    fs.unlinkSync(filePath);
+
+    logger.info('agent.controller: deleted MCP server', { serverId });
+    res.json({ success: true });
+  } catch (err) {
+    next(err);
+  }
+}
+
+/**
+ * POST /api/mcp-servers/install
+ *
+ * 安装 npm 上的 MCP Server 包。
+ * Body: { packageName: string, registry?: string }
+ */
+export async function installMcpPackage(req: Request, res: Response, next: NextFunction): Promise<void> {
+  const { spawn } = await import('child_process');
+
+  try {
+    const { packageName, registry } = req.body;
+
+    if (!packageName || typeof packageName !== 'string') {
+      res.status(400).json({ code: 'INVALID_PARAMS', message: 'packageName is required' });
+      return;
+    }
+
+    // 安全校验：只允许合法的 npm 包名
+    const validPackagePattern = /^(@[a-z0-9-~][a-z0-9-._~]*\/)?[a-z0-9-~][a-z0-9-._~]*(@[\w.+-]+)?$/i;
+    if (!validPackagePattern.test(packageName)) {
+      res.status(400).json({ code: 'INVALID_PACKAGE', message: 'Invalid package name format' });
+      return;
+    }
+
+    logger.info('agent.controller: installing MCP package', { packageName, registry });
+
+    // 构建 npm install 命令参数
+    const args = ['install', packageName, '--save'];
+    if (registry) {
+      args.push('--registry', registry);
+    }
+
+    // 在 backend 目录执行 npm install
+    const backendDir = path.resolve(__dirname, '../..');
+    const npmProcess = spawn('npm', args, {
+      cwd: backendDir,
+      shell: true,
+      env: { ...process.env },
+    });
+
+    let stdout = '';
+    let stderr = '';
+
+    npmProcess.stdout?.on('data', (data: Buffer) => {
+      stdout += data.toString();
+    });
+
+    npmProcess.stderr?.on('data', (data: Buffer) => {
+      stderr += data.toString();
+    });
+
+    npmProcess.on('close', (code: number | null) => {
+      if (code === 0) {
+        logger.info('agent.controller: MCP package installed successfully', { packageName });
+        res.json({
+          success: true,
+          packageName,
+          message: 'Package installed successfully',
+          stdout: stdout.trim(),
+        });
+      } else {
+        logger.error('agent.controller: MCP package installation failed', { packageName, code, stderr });
+
+        // 尝试从 stderr 中提取 npm log 文件路径并读取内容
+        let npmLogContent: string | undefined;
+        // npm 错误格式: "npm error A complete log of this run can be found in: C:\...\xxx.log"
+        // 或者换行: "... can be found in:\n   C:\...\xxx.log"
+        const combinedOutput = (stdout + '\n' + stderr);
+        // 匹配 Windows 路径 (C:\...) 或 Unix 路径 (/...)
+        const logPathMatch = combinedOutput.match(/A complete log of this run can be found in:?\s*([A-Za-z]:[\\\/][^\r\n]+\.log|\/[^\r\n]+\.log)/i);
+
+        logger.debug('agent.controller: looking for npm log path', {
+          matchFound: !!logPathMatch,
+          extractedPath: logPathMatch?.[1]
+        });
+
+        if (logPathMatch) {
+          const logPath = logPathMatch[1].trim();
+          logger.debug('agent.controller: trying to read npm log', { logPath });
+          try {
+            if (fs.existsSync(logPath)) {
+              npmLogContent = fs.readFileSync(logPath, 'utf-8');
+              logger.debug('agent.controller: npm log read successfully', { size: npmLogContent.length });
+              // 限制日志大小，避免返回过大内容
+              if (npmLogContent.length > 50000) {
+                npmLogContent = npmLogContent.slice(-50000);
+                npmLogContent = '... (日志已截断，仅显示最后 50KB)\n\n' + npmLogContent;
+              }
+            } else {
+              logger.warn('agent.controller: npm log file not found', { logPath });
+            }
+          } catch (logErr) {
+            logger.warn('agent.controller: failed to read npm log', { logPath, error: logErr });
+          }
+        }
+
+        // 返回 200 但 success: false，让前端能获取完整错误信息 (包括 npmLog)
+        res.json({
+          success: false,
+          packageName,
+          code: 'INSTALL_FAILED',
+          message: `npm install failed with code ${code}`,
+          stderr: stderr.trim(),
+          npmLog: npmLogContent,
+        });
+      }
+    });
+
+    npmProcess.on('error', (err: Error) => {
+      logger.error('agent.controller: failed to spawn npm', { error: err });
+      res.status(500).json({
+        code: 'SPAWN_ERROR',
+        message: 'Failed to execute npm install',
+        error: err.message,
+      });
+    });
+  } catch (err) {
+    next(err);
+  }
+}
+
+/**
+ * GET /api/mcp-servers/packages
+ *
+ * 列出已安装的 MCP Server 相关包。
+ */
+export async function listInstalledMcpPackages(_req: Request, res: Response, next: NextFunction): Promise<void> {
+  try {
+    const backendDir = path.resolve(__dirname, '../..');
+    const packageJsonPath = path.join(backendDir, 'package.json');
+
+    if (!fs.existsSync(packageJsonPath)) {
+      res.status(500).json({ code: 'NO_PACKAGE_JSON', message: 'package.json not found' });
+      return;
+    }
+
+    const packageJson = JSON.parse(fs.readFileSync(packageJsonPath, 'utf-8'));
+    const deps = { ...packageJson.dependencies, ...packageJson.devDependencies };
+
+    // 过滤出 MCP 相关的包（包名包含 mcp、modelcontextprotocol 等）
+    const mcpPackages: Array<{ name: string; version: string }> = [];
+    for (const [name, version] of Object.entries(deps)) {
+      if (
+        name.includes('mcp') ||
+        name.includes('modelcontextprotocol') ||
+        name.includes('server-') // 常见的 MCP server 命名
+      ) {
+        mcpPackages.push({ name, version: String(version) });
+      }
+    }
+
+    res.json(mcpPackages);
+  } catch (err) {
+    next(err);
+  }
+}
+
+/**
+ * POST /api/mcp-servers/probe-tools
+ *
+ * 探测已安装的 MCP 包提供的工具列表（临时启动并获取 tools）。
+ */
+export async function probeMcpPackageTools(req: Request, res: Response, next: NextFunction): Promise<void> {
+  try {
+    const { packageName, args: customArgs } = req.body as { packageName: string; args?: string[] };
+
+    if (!packageName) {
+      res.status(400).json({ code: 'INVALID_PARAMS', message: 'packageName is required' });
+      return;
+    }
+
+    logger.info('agent.controller: probing MCP package tools', { packageName, customArgs });
+
+    // 创建临时的 MCP Server 配置
+    const tempConfig: McpServerConfig = {
+      id: `__probe__${Date.now()}`,
+      command: 'npx',
+      args: ['-y', packageName, ...(customArgs || [])],
+      enabled: true,
+    };
+
+    try {
+      const tools = await listMcpTools(tempConfig);
+      // 关闭临时连接
+      await closeMcpClient(tempConfig.id);
+
+      logger.info('agent.controller: probed tools from MCP package', {
+        packageName,
+        toolCount: tools.length,
+        toolNames: tools.map(t => t.name),
+      });
+
+      res.json({
+        success: true,
+        packageName,
+        tools,
+      });
+    } catch (probeErr) {
+      // 确保关闭临时连接
+      await closeMcpClient(tempConfig.id);
+
+      logger.error('agent.controller: failed to probe MCP package tools', { packageName, error: probeErr });
+      res.json({
+        success: false,
+        packageName,
+        error: probeErr instanceof Error ? probeErr.message : String(probeErr),
+        tools: [],
+      });
+    }
+  } catch (err) {
+    next(err);
+  }
+}
+
+/**
+ * POST /api/mcp-servers/test
+ *
+ * 测试 MCP Server 配置（可以是未保存的配置，也可以是已保存的）。
+ * 成功时返回可用 tools 列表，失败时返回错误信息。
+ */
+export async function testMcpServer(req: Request, res: Response, next: NextFunction): Promise<void> {
+  try {
+    const { config } = req.body as { config: McpServerConfig };
+
+    if (!config || !config.id) {
+      res.status(400).json({ code: 'INVALID_PARAMS', message: 'config with id is required' });
+      return;
+    }
+
+    const serverType = config.type || 'local';
+    if (serverType === 'local' && !config.command) {
+      res.status(400).json({ code: 'INVALID_PARAMS', message: 'command is required for local MCP server' });
+      return;
+    }
+    if (serverType === 'remote' && !config.url) {
+      res.status(400).json({ code: 'INVALID_PARAMS', message: 'url is required for remote MCP server' });
+      return;
+    }
+
+    logger.info('agent.controller: testing MCP server', { serverId: config.id, type: serverType });
+
+    // 使用临时 ID 测试，避免覆盖现有连接
+    const testConfig: McpServerConfig = {
+      ...config,
+      id: `__test__${config.id}__${Date.now()}`,
+    };
+
+    const testTime = new Date().toISOString();
+    let testSuccess = false;
+    let testError: string | undefined;
+    let testTools: Array<{ name: string; description?: string }> = [];
+
+    try {
+      const tools = await listMcpTools(testConfig);
+      testSuccess = true;
+      testTools = tools.map(t => ({ name: t.name, description: t.description }));
+
+      logger.info('agent.controller: MCP server test succeeded', {
+        serverId: config.id,
+        toolCount: tools.length,
+      });
+    } catch (err) {
+      testSuccess = false;
+      testError = err instanceof Error ? err.message : String(err);
+
+      logger.error('agent.controller: MCP server test failed', {
+        serverId: config.id,
+        error: testError,
+      });
+    } finally {
+      // 关闭测试连接
+      await closeMcpClient(testConfig.id);
+    }
+
+    res.json({
+      success: testSuccess,
+      serverId: config.id,
+      testTime,
+      tools: testTools,
+      error: testError,
     });
   } catch (err) {
     next(err);

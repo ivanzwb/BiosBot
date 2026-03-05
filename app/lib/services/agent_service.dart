@@ -206,6 +206,73 @@ class AgentService {
   }
 
   // ============================================================
+  // MCP Server 管理
+  // ============================================================
+
+  /// 获取 MCP Server 列表
+  Future<List<McpServerConfig>> listMcpServers() async {
+    final data = await _api.get('/mcp-servers');
+    return (data as List).map((j) => McpServerConfig.fromJson(j as Map<String, dynamic>)).toList();
+  }
+
+  /// 获取 MCP Server 提供的工具列表
+  Future<List<McpTool>> getMcpServerTools(String serverId) async {
+    final data = await _api.get('/mcp-servers/${Uri.encodeComponent(serverId)}/tools');
+    return (data as List).map((j) => McpTool.fromJson(j as Map<String, dynamic>)).toList();
+  }
+
+  /// 创建 MCP Server
+  Future<McpServerConfig> createMcpServer(Map<String, dynamic> server) async {
+    final data = await _api.post('/mcp-servers', body: server);
+    return McpServerConfig.fromJson((data as Map<String, dynamic>)['server'] as Map<String, dynamic>);
+  }
+
+  /// 更新 MCP Server
+  Future<void> updateMcpServer(String serverId, Map<String, dynamic> fields) async {
+    await _api.put('/mcp-servers/${Uri.encodeComponent(serverId)}', body: fields);
+  }
+
+  /// 删除 MCP Server
+  Future<void> deleteMcpServer(String serverId) async {
+    await _api.delete('/mcp-servers/${Uri.encodeComponent(serverId)}');
+  }
+
+  /// 安装 MCP 包
+  Future<McpPackageInstallResult> installMcpPackage(String packageName, {String? registry}) async {
+    final body = <String, dynamic>{'packageName': packageName};
+    if (registry != null && registry.isNotEmpty) {
+      body['registry'] = registry;
+    }
+    final data = await _api.post('/mcp-servers/install', body: body);
+    return McpPackageInstallResult.fromJson(data as Map<String, dynamic>);
+  }
+
+  /// 获取已安装的 MCP 包列表
+  Future<List<InstalledMcpPackage>> listInstalledMcpPackages() async {
+    final data = await _api.get('/mcp-servers/packages');
+    return (data as List).map((j) => InstalledMcpPackage.fromJson(j as Map<String, dynamic>)).toList();
+  }
+
+  /// 探测已安装 MCP 包的 tools
+  Future<McpProbeToolsResult> probeMcpPackageTools(String packageName, {List<String>? args}) async {
+    final body = <String, dynamic>{'packageName': packageName};
+    if (args != null && args.isNotEmpty) {
+      body['args'] = args;
+    }
+    final data = await _api.post('/mcp-servers/probe-tools', body: body);
+    return McpProbeToolsResult.fromJson(data as Map<String, dynamic>);
+  }
+
+  /// 测试 MCP Server 配置
+  Future<McpTestResult> testMcpServer(McpServerConfig config) async {
+    final body = <String, dynamic>{
+      'config': config.toJson(),
+    };
+    final data = await _api.post('/mcp-servers/test', body: body);
+    return McpTestResult.fromJson(data as Map<String, dynamic>);
+  }
+
+  // ============================================================
   // 配置管理
   // ============================================================
 

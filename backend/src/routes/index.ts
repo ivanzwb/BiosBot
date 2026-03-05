@@ -6,7 +6,7 @@
 
 import { Router } from 'express';
 import { healthCheck } from '../controllers/health.controller';
-import { listAgents, refreshAgents, updateAgentConfig, createAgentConfig, deleteAgentConfig, listSkills, createSkill, updateSkill, deleteSkill, listTools, createTool, updateTool, deleteTool, scriptUploadMiddleware, uploadToolScript, listGlobalTools, createGlobalTool, updateGlobalTool, deleteGlobalTool, globalScriptUploadMiddleware, uploadGlobalToolScript } from '../controllers/agent.controller';
+import { listAgents, refreshAgents, updateAgentConfig, createAgentConfig, deleteAgentConfig, listSkills, createSkill, updateSkill, deleteSkill, listTools, createTool, updateTool, deleteTool, scriptUploadMiddleware, uploadToolScript, listGlobalTools, createGlobalTool, updateGlobalTool, deleteGlobalTool, globalScriptUploadMiddleware, uploadGlobalToolScript, listMcpServers, getMcpServerTools, createMcpServer, updateMcpServer, deleteMcpServer, installMcpPackage, listInstalledMcpPackages, probeMcpPackageTools, testMcpServer } from '../controllers/agent.controller';
 import intentRoutes from './intent.routes';
 import agentRoutes from './agent.routes';
 import chatRoutes from './chat.routes';
@@ -57,6 +57,17 @@ router.put('/global-tools/:toolId', updateGlobalTool);
 router.delete('/global-tools/:toolId', deleteGlobalTool);
 // Global Tool Script Upload
 router.post('/global-tools/:toolId/script', globalScriptUploadMiddleware, uploadGlobalToolScript);
+
+// MCP Server CRUD（MCP 服务器配置）
+router.get('/mcp-servers', listMcpServers);
+router.get('/mcp-servers/packages', listInstalledMcpPackages); // 列出已安装的 MCP 包
+router.get('/mcp-servers/:serverId/tools', getMcpServerTools);
+router.post('/mcp-servers', createMcpServer);
+router.post('/mcp-servers/install', installMcpPackage);  // 安装 MCP 包
+router.post('/mcp-servers/probe-tools', probeMcpPackageTools);  // 探测已安装包的 tools
+router.post('/mcp-servers/test', testMcpServer);  // 测试 MCP Server 配置
+router.put('/mcp-servers/:serverId', updateMcpServer);
+router.delete('/mcp-servers/:serverId', deleteMcpServer);
 
 // 删除 Agent
 router.delete('/agents/:id', deleteAgentConfig);

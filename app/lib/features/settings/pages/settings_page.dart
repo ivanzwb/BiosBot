@@ -21,6 +21,7 @@ class _SettingsPageState extends State<SettingsPage> {
       vm.loadConfigs();
       vm.loadProxyExtras();
       vm.loadGlobalTools();
+      vm.loadMcpServers();
     });
   }
 
@@ -92,6 +93,22 @@ class _SettingsPageState extends State<SettingsPage> {
               ),
               const SizedBox(height: 8),
               _GlobalToolsSection(vm: vm, onEdit: (tool) => _showGlobalToolEditor(context, vm, tool)),
+
+              const SizedBox(height: 32),
+              const Divider(),
+              const SizedBox(height: 16),
+
+              // ==================== MCP Server ====================
+              _SectionHeader(
+                title: 'MCP Server',
+                trailing: FilledButton.icon(
+                  icon: const Icon(Icons.add, size: 18),
+                  label: const Text('添加'),
+                  onPressed: () => _showMcpServerEditor(context, vm, null),
+                ),
+              ),
+              const SizedBox(height: 8),
+              _McpServersSection(vm: vm, onEdit: (server) => _showMcpServerEditor(context, vm, server)),
 
               const SizedBox(height: 32),
               const Divider(),
@@ -419,6 +436,687 @@ class _SettingsPageState extends State<SettingsPage> {
                         if (ctx.mounted) Navigator.pop(ctx);
                       },
                       child: const Text('保存'),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 20),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  void _showMcpServerEditor(
+      BuildContext context, SettingsViewModel vm, McpServerConfig? existing) {
+    final idCtrl = TextEditingController(text: existing?.id ?? '');
+    final commandCtrl = TextEditingController(text: existing?.command ?? '');
+    final argsCtrl = TextEditingController(text: (existing?.args ?? []).join('\n'));
+    final envCtrl = TextEditingController(
+      text: (existing?.env ?? {}).entries.map((e) => '${e.key}=${e.value}').join('\n'),
+    );
+    final urlCtrl = TextEditingController(text: existing?.url ?? '');
+    final headersCtrl = TextEditingController(
+      text: (existing?.headers ?? {}).entries.map((e) => '${e.key}=${e.value}').join('\n'),
+    );
+    String serverType = existing?.type ?? 'local';
+
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      useSafeArea: true,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setBottomState) => Padding(
+          padding: EdgeInsets.only(
+            bottom: MediaQuery.of(ctx).viewInsets.bottom,
+            left: 20, right: 20, top: 20,
+          ),
+          child: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  existing != null ? '编辑 MCP Server' : '添加 MCP Server',
+                  style: Theme.of(context).textTheme.titleMedium,
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  '通过 MCP 协议连接外部工具服务器',
+                  style: TextStyle(
+                    fontSize: 12,
+                    color: Theme.of(context).colorScheme.outline,
+                  ),
+                ),
+                const SizedBox(height: 16),
+                if (existing == null) ...[
+                  TextField(
+                    controller: idCtrl,
+                    decoration: const InputDecoration(
+                      labelText: 'Server ID *',
+                      hintText: '如 filesystem',
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                ],
+                // 服务器类型选择
+                DropdownButtonFormField<String>(
+                  value: serverType,
+                  decoration: const InputDecoration(
+                    labelText: '服务器类型',
+                  ),
+                  items: const [
+                    DropdownMenuItem(value: 'local', child: Text('📦 本地 MCP Server（npm 包启动进程）')),
+                    DropdownMenuItem(value: 'remote', child: Text('🌐 远程 MCP Server（SSE/HTTP 连接）')),
+                  ],
+                  onChanged: existing != null ? null : (value) {
+                    setBottomState(() {
+                      serverType = value ?? 'local';
+                    });
+                  },
+                ),
+                const SizedBox(height: 12),
+                // 本地 MCP Server 配置
+                if (serverType == 'local') ...[
+                  // 安装 npm 包区域
+                  _McpInstallSection(vm: vm, setBottomState: setBottomState),
+                  const SizedBox(height: 12),
+                  TextField(
+                    controller: commandCtrl,
+                    decoration: const InputDecoration(
+                      labelText: '启动命令 *',
+                      hintText: '如 npx',
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  TextField(
+                    controller: argsCtrl,
+                    maxLines: 4,
+                    decoration: const InputDecoration(
+                      labelText: '命令参数（每行一个）',
+                      hintText: '-y\n@modelcontextprotocol/server-filesystem\nC:/Projects',
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  TextField(
+                    controller: envCtrl,
+                    maxLines: 3,
+                    decoration: const InputDecoration(
+                      labelText: '环境变量（每行 KEY=VALUE）',
+                      hintText: 'API_KEY=your-key',
+                    ),
+                  ),
+                ],
+                // 远程 MCP Server 配置
+                if (serverType == 'remote') ...[
+                  TextField(
+                    controller: urlCtrl,
+                    decoration: const InputDecoration(
+                      labelText: '服务器 URL *',
+                      hintText: 'https://mcp.example.com/sse',
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  TextField(
+                    controller: headersCtrl,
+                    maxLines: 3,
+                    decoration: const InputDecoration(
+                      labelText: '请求头（每行 KEY=VALUE，用于认证等）',
+                      hintText: 'Authorization=Bearer your-token',
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  Text(
+                    '🌐 远程 MCP Server 通过 SSE (Server-Sent Events) 协议连接。',
+                    style: TextStyle(fontSize: 11, color: Theme.of(context).colorScheme.outline),
+                  ),
+                ],
+                // 测试结果显示
+                if (vm.mcpTestResult != null) ...[
+                  const SizedBox(height: 16),
+                  Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      color: vm.mcpTestResult!.success
+                          ? Colors.green.shade100
+                          : Colors.red.shade100,
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(
+                        color: vm.mcpTestResult!.success ? Colors.green : Colors.red,
+                      ),
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Row(
+                          children: [
+                            Icon(
+                              vm.mcpTestResult!.success ? Icons.check_circle : Icons.error,
+                              color: vm.mcpTestResult!.success ? Colors.green : Colors.red,
+                              size: 20,
+                            ),
+                            const SizedBox(width: 8),
+                            Text(
+                              vm.mcpTestResult!.success ? '测试成功！' : '测试失败',
+                              style: TextStyle(
+                                fontWeight: FontWeight.bold,
+                                color: vm.mcpTestResult!.success ? Colors.green.shade700 : Colors.red.shade700,
+                              ),
+                            ),
+                          ],
+                        ),
+                        if (vm.mcpTestResult!.success && vm.mcpTestResult!.tools.isNotEmpty) ...[
+                          const SizedBox(height: 8),
+                          Text(
+                            '检测到 ${vm.mcpTestResult!.tools.length} 个可用 Tools：',
+                            style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w500),
+                          ),
+                          const SizedBox(height: 4),
+                          Wrap(
+                            spacing: 6,
+                            runSpacing: 4,
+                            children: vm.mcpTestResult!.tools.map((tool) => Chip(
+                              label: Text(tool.name, style: const TextStyle(fontSize: 10)),
+                              tooltip: tool.description,
+                              visualDensity: VisualDensity.compact,
+                              backgroundColor: Colors.green.shade200,
+                            )).toList(),
+                          ),
+                        ],
+                        if (!vm.mcpTestResult!.success && vm.mcpTestResult!.error != null) ...[
+                          const SizedBox(height: 8),
+                          Text(
+                            vm.mcpTestResult!.error!,
+                            style: TextStyle(fontSize: 12, color: Colors.red.shade700),
+                          ),
+                        ],
+                      ],
+                    ),
+                  ),
+                ],
+                const SizedBox(height: 20),
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.end,
+                  children: [
+                    // 测试按钮
+                    OutlinedButton.icon(
+                      onPressed: vm.testingMcpServer
+                          ? null
+                          : () async {
+                              final serverId = existing?.id ?? idCtrl.text.trim();
+                              if (serverId.isEmpty) {
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  const SnackBar(content: Text('请先填写 Server ID')),
+                                );
+                                return;
+                              }
+                              if (serverType == 'local' && commandCtrl.text.trim().isEmpty) {
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  const SnackBar(content: Text('本地 MCP Server 需要填写启动命令')),
+                                );
+                                return;
+                              }
+                              if (serverType == 'remote' && urlCtrl.text.trim().isEmpty) {
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  const SnackBar(content: Text('远程 MCP Server 需要填写 URL')),
+                                );
+                                return;
+                              }
+
+                              final args = argsCtrl.text
+                                  .split('\n')
+                                  .map((s) => s.trim())
+                                  .where((s) => s.isNotEmpty)
+                                  .toList();
+                              final env = <String, String>{};
+                              for (final line in envCtrl.text.split('\n')) {
+                                final idx = line.indexOf('=');
+                                if (idx > 0) {
+                                  env[line.substring(0, idx).trim()] = line.substring(idx + 1).trim();
+                                }
+                              }
+                              final headers = <String, String>{};
+                              for (final line in headersCtrl.text.split('\n')) {
+                                final idx = line.indexOf('=');
+                                if (idx > 0) {
+                                  headers[line.substring(0, idx).trim()] = line.substring(idx + 1).trim();
+                                }
+                              }
+
+                              final testConfig = McpServerConfig(
+                                id: serverId,
+                                type: serverType,
+                                enabled: true,
+                                command: serverType == 'local' ? commandCtrl.text.trim() : null,
+                                args: serverType == 'local' ? args : [],
+                                env: serverType == 'local' ? env : {},
+                                url: serverType == 'remote' ? urlCtrl.text.trim() : null,
+                                headers: serverType == 'remote' ? headers : {},
+                              );
+
+                              setBottomState(() {});
+                              await vm.testMcpServer(testConfig);
+                              setBottomState(() {});
+                            },
+                      icon: vm.testingMcpServer
+                          ? const SizedBox(
+                              width: 16,
+                              height: 16,
+                              child: CircularProgressIndicator(strokeWidth: 2),
+                            )
+                          : const Icon(Icons.play_arrow, size: 18),
+                      label: Text(vm.testingMcpServer ? '测试中...' : '测试连接'),
+                    ),
+                    const SizedBox(width: 8),
+                    TextButton(
+                      onPressed: () {
+                        vm.clearMcpTestResult();
+                        Navigator.pop(ctx);
+                      },
+                      child: const Text('取消'),
+                    ),
+                    const SizedBox(width: 8),
+                    FilledButton(
+                      onPressed: () async {
+                        if (existing == null && idCtrl.text.trim().isEmpty) {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(content: Text('Server ID 不能为空')),
+                          );
+                          return;
+                        }
+                        if (serverType == 'local' && commandCtrl.text.trim().isEmpty) {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(content: Text('本地 MCP Server 需要填写启动命令')),
+                          );
+                          return;
+                        }
+                        if (serverType == 'remote' && urlCtrl.text.trim().isEmpty) {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(content: Text('远程 MCP Server 需要填写 URL')),
+                          );
+                          return;
+                        }
+
+                        final args = argsCtrl.text
+                            .split('\n')
+                            .map((s) => s.trim())
+                            .where((s) => s.isNotEmpty)
+                            .toList();
+                        final env = <String, String>{};
+                        for (final line in envCtrl.text.split('\n')) {
+                          final idx = line.indexOf('=');
+                          if (idx > 0) {
+                            env[line.substring(0, idx).trim()] = line.substring(idx + 1).trim();
+                          }
+                        }
+                        final headers = <String, String>{};
+                        for (final line in headersCtrl.text.split('\n')) {
+                          final idx = line.indexOf('=');
+                          if (idx > 0) {
+                            headers[line.substring(0, idx).trim()] = line.substring(idx + 1).trim();
+                          }
+                        }
+
+                        final configData = <String, dynamic>{
+                          'type': serverType,
+                          if (serverType == 'local') ...{
+                            'command': commandCtrl.text.trim(),
+                            'args': args,
+                            'env': env,
+                          },
+                          if (serverType == 'remote') ...{
+                            'url': urlCtrl.text.trim(),
+                            'headers': headers,
+                          },
+                        };
+
+                        if (existing != null) {
+                          await vm.updateMcpServer(existing.id, configData);
+                        } else {
+                          await vm.createMcpServer(
+                            id: idCtrl.text.trim(),
+                            type: serverType,
+                            command: serverType == 'local' ? commandCtrl.text.trim() : null,
+                            args: serverType == 'local' ? args : null,
+                            env: serverType == 'local' ? env : null,
+                            url: serverType == 'remote' ? urlCtrl.text.trim() : null,
+                            headers: serverType == 'remote' ? headers : null,
+                          );
+                        }
+                        if (ctx.mounted) Navigator.pop(ctx);
+                      },
+                      child: const Text('保存'),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 20),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  void _showMcpPackageInstaller(BuildContext context, SettingsViewModel vm) {
+    final packageCtrl = TextEditingController();
+    final registryCtrl = TextEditingController();
+
+    vm.clearMcpInstallError();
+    vm.clearMcpProbeState();
+    vm.loadInstalledMcpPackages();
+
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      useSafeArea: true,
+      builder: (ctx) => ListenableBuilder(
+        listenable: vm,
+        builder: (ctx, _) => Padding(
+          padding: EdgeInsets.only(
+            bottom: MediaQuery.of(ctx).viewInsets.bottom,
+            left: 20, right: 20, top: 20,
+          ),
+          child: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  '📦 安装 MCP Server 包',
+                  style: Theme.of(context).textTheme.titleMedium,
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  '从 npm 安装 MCP Server 依赖包',
+                  style: TextStyle(
+                    fontSize: 12,
+                    color: Theme.of(context).colorScheme.outline,
+                  ),
+                ),
+                // 显示错误消息
+                if (vm.mcpInstallError != null) ...[
+                  const SizedBox(height: 12),
+                  Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      color: Theme.of(context).colorScheme.errorContainer,
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(color: Theme.of(context).colorScheme.error),
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          '❌ 安装失败',
+                          style: TextStyle(
+                            fontWeight: FontWeight.bold,
+                            color: Theme.of(context).colorScheme.onErrorContainer,
+                          ),
+                        ),
+                        const SizedBox(height: 4),
+                        ConstrainedBox(
+                          constraints: const BoxConstraints(maxHeight: 100),
+                          child: SingleChildScrollView(
+                            child: Text(
+                              vm.mcpInstallError!,
+                              style: TextStyle(
+                                fontSize: 12,
+                                color: Theme.of(context).colorScheme.onErrorContainer,
+                              ),
+                            ),
+                          ),
+                        ),
+                        // 详细 npm 日志
+                        if (vm.mcpInstallNpmLog != null) ...[
+                          const SizedBox(height: 8),
+                          ExpansionTile(
+                            title: const Text(
+                              '查看详细 npm 日志',
+                              style: TextStyle(fontSize: 12),
+                            ),
+                            tilePadding: EdgeInsets.zero,
+                            childrenPadding: const EdgeInsets.only(top: 8),
+                            children: [
+                              Container(
+                                width: double.infinity,
+                                padding: const EdgeInsets.all(8),
+                                decoration: BoxDecoration(
+                                  color: Colors.grey[900],
+                                  borderRadius: BorderRadius.circular(6),
+                                ),
+                                child: ConstrainedBox(
+                                  constraints: const BoxConstraints(maxHeight: 200),
+                                  child: SingleChildScrollView(
+                                    child: SelectableText(
+                                      vm.mcpInstallNpmLog!,
+                                      style: const TextStyle(
+                                        fontSize: 10,
+                                        fontFamily: 'monospace',
+                                        color: Colors.white70,
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ],
+                      ],
+                    ),
+                  ),
+                ],
+                // 探测中
+                if (vm.probingMcpTools) ...[
+                  const SizedBox(height: 12),
+                  Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      color: Colors.amber.shade100,
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(color: Colors.amber),
+                    ),
+                    child: const Row(
+                      children: [
+                        SizedBox(
+                          width: 16,
+                          height: 16,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        ),
+                        SizedBox(width: 12),
+                        Text('🔍 正在检测 MCP Tools...'),
+                      ],
+                    ),
+                  ),
+                ],
+                // 探测成功显示 tools
+                if (vm.probedMcpTools.isNotEmpty && vm.probedMcpPackage != null) ...[
+                  const SizedBox(height: 12),
+                  Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      color: Colors.green.shade100,
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(color: Colors.green),
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          '✅ ${vm.probedMcpPackage} 安装成功！',
+                          style: const TextStyle(fontWeight: FontWeight.bold),
+                        ),
+                        const SizedBox(height: 8),
+                        Text(
+                          '检测到 ${vm.probedMcpTools.length} 个可用 Tools：',
+                          style: const TextStyle(fontSize: 12),
+                        ),
+                        const SizedBox(height: 4),
+                        ConstrainedBox(
+                          constraints: const BoxConstraints(maxHeight: 150),
+                          child: SingleChildScrollView(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: vm.probedMcpTools.map((tool) => Padding(
+                                padding: const EdgeInsets.symmetric(vertical: 2),
+                                child: Row(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Container(
+                                      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
+                                      decoration: BoxDecoration(
+                                        color: Colors.green.shade700,
+                                        borderRadius: BorderRadius.circular(4),
+                                      ),
+                                      child: Text(
+                                        tool.name,
+                                        style: const TextStyle(
+                                          fontSize: 11,
+                                          fontFamily: 'monospace',
+                                          color: Colors.white,
+                                        ),
+                                      ),
+                                    ),
+                                    if (tool.description != null) ...[
+                                      const SizedBox(width: 8),
+                                      Expanded(
+                                        child: Text(
+                                          '— ${tool.description}',
+                                          style: TextStyle(
+                                            fontSize: 11,
+                                            color: Colors.green.shade900,
+                                          ),
+                                        ),
+                                      ),
+                                    ],
+                                  ],
+                                ),
+                              )).toList(),
+                            ),
+                          ),
+                        ),
+                        const SizedBox(height: 8),
+                        Text(
+                          '⬆️ 请在「添加 MCP Server」中配置此包以启用这些 Tools',
+                          style: TextStyle(fontSize: 11, color: Colors.green.shade800),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+                // 探测失败
+                if (vm.mcpProbeError != null && vm.probedMcpTools.isEmpty) ...[
+                  const SizedBox(height: 12),
+                  Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      color: Colors.amber.shade100,
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(color: Colors.amber),
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const Text(
+                          '⚠️ 包已安装，但 Tools 探测失败',
+                          style: TextStyle(fontWeight: FontWeight.bold),
+                        ),
+                        const SizedBox(height: 4),
+                        Text(
+                          vm.mcpProbeError!,
+                          style: const TextStyle(fontSize: 12),
+                        ),
+                        const SizedBox(height: 4),
+                        const Text(
+                          '这可能是因为该 MCP Server 需要特定的启动参数。请在「添加 MCP Server」中手动配置。',
+                          style: TextStyle(fontSize: 11),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+                const SizedBox(height: 16),
+                TextField(
+                  controller: packageCtrl,
+                  decoration: const InputDecoration(
+                    labelText: '包名 *',
+                    hintText: '@modelcontextprotocol/server-filesystem',
+                  ),
+                ),
+                const SizedBox(height: 12),
+                TextField(
+                  controller: registryCtrl,
+                  decoration: const InputDecoration(
+                    labelText: 'npm Registry（可选）',
+                    hintText: 'https://registry.npmjs.org',
+                  ),
+                ),
+                const SizedBox(height: 12),
+                Text(
+                  '常用 MCP Server 包:\n'
+                  '• @modelcontextprotocol/server-filesystem（文件系统）\n'
+                  '• @modelcontextprotocol/server-github（GitHub）\n'
+                  '• @modelcontextprotocol/server-puppeteer（浏览器自动化）',
+                  style: TextStyle(fontSize: 11, color: Theme.of(context).colorScheme.outline),
+                ),
+                if (vm.installedMcpPackages.isNotEmpty) ...[
+                  const SizedBox(height: 16),
+                  Text(
+                    '已安装的 MCP 相关包:',
+                    style: TextStyle(
+                      fontSize: 12,
+                      color: Theme.of(context).colorScheme.outline,
+                    ),
+                  ),
+                  const SizedBox(height: 4),
+                  ...vm.installedMcpPackages.map((pkg) => Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 2),
+                    child: Text(
+                      '• ${pkg.name} (${pkg.version})',
+                      style: TextStyle(fontSize: 12, color: Theme.of(context).colorScheme.onSurfaceVariant),
+                    ),
+                  )),
+                ],
+                const SizedBox(height: 20),
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.end,
+                  children: [
+                    TextButton(
+                      onPressed: () => Navigator.pop(ctx),
+                      child: const Text('取消'),
+                    ),
+                    const SizedBox(width: 8),
+                    FilledButton(
+                      onPressed: vm.installingMcpPackage || vm.probingMcpTools
+                          ? null
+                          : () async {
+                              if (packageCtrl.text.trim().isEmpty) {
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  const SnackBar(content: Text('包名不能为空')),
+                                );
+                                return;
+                              }
+                              await vm.installMcpPackage(
+                                packageCtrl.text.trim(),
+                                registry: registryCtrl.text.trim().isNotEmpty
+                                    ? registryCtrl.text.trim()
+                                    : null,
+                              );
+                              // 安装后不关闭弹窗，让用户看到探测结果
+                            },
+                      child: vm.installingMcpPackage || vm.probingMcpTools
+                          ? const SizedBox(
+                              width: 16,
+                              height: 16,
+                              child: CircularProgressIndicator(strokeWidth: 2),
+                            )
+                          : const Text('安装'),
                     ),
                   ],
                 ),
@@ -1351,3 +2049,524 @@ class _ProxyAgentConfigState extends State<_ProxyAgentConfig>
   }
 }
 
+/// MCP Server 列表组件
+class _McpServersSection extends StatelessWidget {
+  final SettingsViewModel vm;
+  final void Function(McpServerConfig server) onEdit;
+  const _McpServersSection({required this.vm, required this.onEdit});
+
+  @override
+  Widget build(BuildContext context) {
+    if (vm.loadingMcpServers) {
+      return const Card(
+        child: Padding(
+          padding: EdgeInsets.all(24),
+          child: Center(child: CircularProgressIndicator()),
+        ),
+      );
+    }
+
+    if (vm.mcpServers.isEmpty) {
+      return const Card(
+        child: Padding(
+          padding: EdgeInsets.all(24),
+          child: Center(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(Icons.cable_outlined, size: 48, color: Colors.grey),
+                SizedBox(height: 8),
+                Text('暂无 MCP Server'),
+                SizedBox(height: 4),
+                Text(
+                  '通过 MCP 协议连接外部工具服务器',
+                  style: TextStyle(fontSize: 12, color: Colors.grey),
+                ),
+              ],
+            ),
+          ),
+        ),
+      );
+    }
+
+    return Card(
+      child: Column(
+        children: vm.mcpServers.map((server) => _McpServerTile(
+          server: server,
+          tools: vm.mcpServerTools[server.id] ?? [],
+          loadingTools: vm.loadingMcpTools[server.id] ?? false,
+          onEdit: () => onEdit(server),
+          onDelete: () => vm.deleteMcpServer(server.id),
+          onToggle: () => vm.updateMcpServer(server.id, {'enabled': !server.enabled}),
+          onLoadTools: () => vm.loadMcpServerTools(server.id),
+        )).toList(),
+      ),
+    );
+  }
+}
+
+/// MCP Server 条目
+class _McpServerTile extends StatefulWidget {
+  final McpServerConfig server;
+  final List<McpTool> tools;
+  final bool loadingTools;
+  final VoidCallback onEdit;
+  final VoidCallback onDelete;
+  final VoidCallback onToggle;
+  final VoidCallback onLoadTools;
+
+  const _McpServerTile({
+    required this.server,
+    required this.tools,
+    required this.loadingTools,
+    required this.onEdit,
+    required this.onDelete,
+    required this.onToggle,
+    required this.onLoadTools,
+  });
+
+  @override
+  State<_McpServerTile> createState() => _McpServerTileState();
+}
+
+class _McpServerTileState extends State<_McpServerTile> {
+  bool _toolsExpanded = false;
+
+  @override
+  void didUpdateWidget(_McpServerTile oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    // 工具列表有变化时自动展开
+    if (widget.tools.isNotEmpty && oldWidget.tools.isEmpty) {
+      setState(() => _toolsExpanded = true);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final server = widget.server;
+    final tools = widget.tools;
+    final loadingTools = widget.loadingTools;
+    final isRemote = server.type == 'remote';
+    return Column(
+      children: [
+        ListTile(
+          leading: Icon(
+            isRemote ? Icons.cloud_outlined : Icons.inventory_2_outlined,
+            color: server.enabled ? null : Colors.grey,
+          ),
+          title: Row(
+            children: [
+              Text(
+                server.id,
+                style: TextStyle(
+                  color: server.enabled ? null : Colors.grey,
+                ),
+              ),
+              const SizedBox(width: 8),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
+                decoration: BoxDecoration(
+                  color: isRemote ? Colors.blue.withAlpha(30) : Colors.green.withAlpha(30),
+                  borderRadius: BorderRadius.circular(4),
+                ),
+                child: Text(
+                  isRemote ? '远程' : '本地',
+                  style: TextStyle(
+                    fontSize: 10,
+                    color: isRemote ? Colors.blue : Colors.green,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          subtitle: Text(
+            isRemote
+                ? server.url ?? ''
+                : '${server.command ?? ''} ${server.args.take(2).join(" ")}${server.args.length > 2 ? "..." : ""}',
+            style: const TextStyle(fontSize: 12),
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+          ),
+          trailing: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              IconButton(
+                icon: loadingTools
+                    ? const SizedBox(
+                        width: 18,
+                        height: 18,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      )
+                    : Icon(
+                        tools.isNotEmpty && _toolsExpanded
+                            ? Icons.expand_less
+                            : Icons.build_outlined,
+                        size: 20,
+                      ),
+                tooltip: tools.isNotEmpty ? (_toolsExpanded ? '收起工具' : '展开工具') : '加载工具',
+                onPressed: server.enabled && !loadingTools
+                    ? () {
+                        if (tools.isNotEmpty) {
+                          setState(() => _toolsExpanded = !_toolsExpanded);
+                        } else {
+                          widget.onLoadTools();
+                        }
+                      }
+                    : null,
+              ),
+              Switch(
+                value: server.enabled,
+                onChanged: (_) => widget.onToggle(),
+              ),
+              IconButton(
+                icon: const Icon(Icons.edit_outlined, size: 20),
+                tooltip: '编辑',
+                onPressed: widget.onEdit,
+              ),
+              IconButton(
+                icon: const Icon(Icons.delete_outline, size: 20),
+                tooltip: '删除',
+                onPressed: () {
+                  showDialog(
+                    context: context,
+                    builder: (ctx) => AlertDialog(
+                      title: const Text('确认删除'),
+                      content: Text('确定要删除 MCP Server "${server.id}" 吗？'),
+                      actions: [
+                        TextButton(
+                          onPressed: () => Navigator.pop(ctx),
+                          child: const Text('取消'),
+                        ),
+                        FilledButton(
+                          onPressed: () {
+                            Navigator.pop(ctx);
+                            widget.onDelete();
+                          },
+                          child: const Text('删除'),
+                        ),
+                      ],
+                    ),
+                  );
+                },
+              ),
+            ],
+          ),
+        ),
+        // 工具列表 - 可收缩
+        if (tools.isNotEmpty) ...[
+          InkWell(
+            onTap: () => setState(() => _toolsExpanded = !_toolsExpanded),
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+              decoration: BoxDecoration(
+                color: Theme.of(context).colorScheme.surfaceContainerHighest.withOpacity(0.3),
+              ),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Text(
+                    '🛠️ 提供的工具 (${tools.length})',
+                    style: TextStyle(
+                      fontSize: 12,
+                      fontWeight: FontWeight.w500,
+                      color: Theme.of(context).colorScheme.onSurfaceVariant,
+                    ),
+                  ),
+                  Icon(
+                    _toolsExpanded ? Icons.expand_less : Icons.expand_more,
+                    size: 18,
+                    color: Theme.of(context).colorScheme.outline,
+                  ),
+                ],
+              ),
+            ),
+          ),
+          if (_toolsExpanded)
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+              child: Wrap(
+                spacing: 8,
+                runSpacing: 4,
+                children: tools.map((tool) => Chip(
+                    label: Text(
+                      tool.name,
+                      style: const TextStyle(fontSize: 11),
+                    ),
+                    tooltip: tool.description,
+                    visualDensity: VisualDensity.compact,
+                  )).toList(),
+              ),
+            ),
+        ],
+      ],
+    );
+  }
+}
+
+/// MCP 包安装区域 Widget
+class _McpInstallSection extends StatefulWidget {
+  final SettingsViewModel vm;
+  final StateSetter setBottomState;
+
+  const _McpInstallSection({
+    required this.vm,
+    required this.setBottomState,
+  });
+
+  @override
+  State<_McpInstallSection> createState() => _McpInstallSectionState();
+}
+
+class _McpInstallSectionState extends State<_McpInstallSection> {
+  bool _expanded = false;
+  bool _showNpmLog = false;
+  final _packageController = TextEditingController();
+  final _registryController = TextEditingController();
+
+  @override
+  void dispose() {
+    _packageController.dispose();
+    _registryController.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final vm = widget.vm;
+    final colorScheme = Theme.of(context).colorScheme;
+
+    return Container(
+      decoration: BoxDecoration(
+        color: colorScheme.primaryContainer.withOpacity(0.3),
+        border: Border.all(color: colorScheme.primary.withOpacity(0.5)),
+        borderRadius: BorderRadius.circular(8),
+      ),
+      padding: const EdgeInsets.all(12),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // 标题栏
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Text(
+                '📦 安装 npm 包（可选）',
+                style: TextStyle(
+                  fontWeight: FontWeight.w500,
+                  color: colorScheme.primary,
+                ),
+              ),
+              TextButton(
+                onPressed: () {
+                  setState(() => _expanded = !_expanded);
+                  if (_expanded) {
+                    vm.loadInstalledMcpPackages();
+                  }
+                },
+                style: TextButton.styleFrom(
+                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+                  minimumSize: Size.zero,
+                  tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                ),
+                child: Text(_expanded ? '收起' : '展开', style: const TextStyle(fontSize: 12)),
+              ),
+            ],
+          ),
+          // 展开内容
+          if (_expanded) ...[
+            const SizedBox(height: 12),
+            // 错误提示
+            if (vm.mcpInstallError != null)
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.all(12),
+                margin: const EdgeInsets.only(bottom: 12),
+                decoration: BoxDecoration(
+                  color: colorScheme.errorContainer,
+                  borderRadius: BorderRadius.circular(6),
+                  border: Border.all(color: colorScheme.error),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      '❌ 安装失败：',
+                      style: TextStyle(
+                        fontWeight: FontWeight.bold,
+                        color: colorScheme.error,
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      vm.mcpInstallError!,
+                      style: TextStyle(fontSize: 12, color: colorScheme.error),
+                    ),
+                    if (vm.mcpInstallNpmLog != null) ...[
+                      const SizedBox(height: 8),
+                      TextButton(
+                        onPressed: () => setState(() => _showNpmLog = !_showNpmLog),
+                        child: Text(_showNpmLog ? '隐藏详细日志' : '查看详细 npm 日志'),
+                      ),
+                      if (_showNpmLog)
+                        Container(
+                          margin: const EdgeInsets.only(top: 8),
+                          padding: const EdgeInsets.all(10),
+                          decoration: BoxDecoration(
+                            color: Colors.grey[900],
+                            borderRadius: BorderRadius.circular(4),
+                          ),
+                          constraints: const BoxConstraints(maxHeight: 200),
+                          child: SingleChildScrollView(
+                            child: SelectableText(
+                              vm.mcpInstallNpmLog!,
+                              style: const TextStyle(
+                                fontFamily: 'monospace',
+                                fontSize: 11,
+                                color: Colors.white70,
+                              ),
+                            ),
+                          ),
+                        ),
+                    ],
+                  ],
+                ),
+              ),
+            // 正在探测
+            if (vm.probingMcpTools)
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.all(12),
+                margin: const EdgeInsets.only(bottom: 12),
+                decoration: BoxDecoration(
+                  color: Colors.amber.shade100,
+                  borderRadius: BorderRadius.circular(6),
+                  border: Border.all(color: Colors.amber),
+                ),
+                child: const Row(
+                  children: [
+                    SizedBox(
+                      width: 16,
+                      height: 16,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    ),
+                    SizedBox(width: 8),
+                    Text('🔍 正在检测 MCP Tools...', style: TextStyle(color: Colors.brown)),
+                  ],
+                ),
+              ),
+            // 安装成功提示
+            if (vm.probedMcpTools.isNotEmpty && vm.probedMcpPackage != null)
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.all(12),
+                margin: const EdgeInsets.only(bottom: 12),
+                decoration: BoxDecoration(
+                  color: Colors.green.shade100,
+                  borderRadius: BorderRadius.circular(6),
+                  border: Border.all(color: Colors.green),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      '✅ ${vm.probedMcpPackage} 安装成功！',
+                      style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.green),
+                    ),
+                    const SizedBox(height: 8),
+                    Text(
+                      '检测到 ${vm.probedMcpTools.length} 个可用 Tools：',
+                      style: const TextStyle(fontWeight: FontWeight.w500, fontSize: 12),
+                    ),
+                    const SizedBox(height: 4),
+                    Wrap(
+                      spacing: 6,
+                      runSpacing: 4,
+                      children: vm.probedMcpTools.map((tool) => Chip(
+                        label: Text(tool.name, style: const TextStyle(fontSize: 10)),
+                        tooltip: tool.description,
+                        visualDensity: VisualDensity.compact,
+                        backgroundColor: Colors.green.shade700,
+                        labelStyle: const TextStyle(color: Colors.white),
+                      )).toList(),
+                    ),
+                  ],
+                ),
+              ),
+            // 包名输入
+            TextField(
+              controller: _packageController,
+              decoration: const InputDecoration(
+                labelText: '包名',
+                hintText: '例如：@anthropic/mcp-server-puppeteer',
+                isDense: true,
+                border: OutlineInputBorder(),
+              ),
+            ),
+            const SizedBox(height: 8),
+            // Registry 输入
+            TextField(
+              controller: _registryController,
+              decoration: const InputDecoration(
+                labelText: 'Registry（可选）',
+                hintText: '留空使用默认 registry',
+                isDense: true,
+                border: OutlineInputBorder(),
+              ),
+            ),
+            const SizedBox(height: 12),
+            // 安装按钮
+            SizedBox(
+              width: double.infinity,
+              child: ElevatedButton.icon(
+                onPressed: vm.installingMcpPackage || _packageController.text.trim().isEmpty
+                    ? null
+                    : () async {
+                        widget.setBottomState(() {});
+                        final success = await vm.installMcpPackage(
+                          _packageController.text.trim(),
+                          registry: _registryController.text.trim().isEmpty
+                              ? null
+                              : _registryController.text.trim(),
+                        );
+                        widget.setBottomState(() {});
+                        if (success) {
+                          // 探测 tools
+                          await vm.probeMcpPackageTools(_packageController.text.trim());
+                          widget.setBottomState(() {});
+                        }
+                      },
+                icon: vm.installingMcpPackage
+                    ? const SizedBox(
+                        width: 16,
+                        height: 16,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      )
+                    : const Icon(Icons.download),
+                label: Text(vm.installingMcpPackage ? '安装中...' : '安装包'),
+              ),
+            ),
+            // 已安装的包列表
+            if (vm.installedMcpPackages.isNotEmpty) ...[
+              const SizedBox(height: 12),
+              ExpansionTile(
+                title: Text(
+                  '已安装的 MCP 包 (${vm.installedMcpPackages.length})',
+                  style: const TextStyle(fontSize: 13),
+                ),
+                tilePadding: EdgeInsets.zero,
+                childrenPadding: const EdgeInsets.only(top: 4),
+                children: vm.installedMcpPackages.map((pkg) => ListTile(
+                  dense: true,
+                  contentPadding: EdgeInsets.zero,
+                  title: Text(pkg.name, style: const TextStyle(fontSize: 12)),
+                  subtitle: Text('v${pkg.version}', style: const TextStyle(fontSize: 10)),
+                  visualDensity: VisualDensity.compact,
+                )).toList(),
+              ),
+            ],
+          ],
+        ],
+      ),
+    );
+  }
+}

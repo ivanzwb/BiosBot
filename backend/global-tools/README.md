@@ -7,8 +7,10 @@
 ```
 global-tools/
 ├── <tool-id>.json      # 工具配置文件
-└── scripts/            # 脚本类型工具的脚本文件
-    └── <script-file>
+├── scripts/            # 脚本类型工具的脚本文件
+│   └── <script-file>
+└── mcp-servers/        # MCP Server 配置文件
+    └── <server-id>.json
 ```
 
 ## 工具配置格式
@@ -67,6 +69,64 @@ global-tools/
    - `PUT /api/global-tools/:toolId` - 更新全局Tools
    - `DELETE /api/global-tools/:toolId` - 删除全局Tools
 3. **直接编辑文件**：在此目录下创建/编辑 JSON 文件
+
+## MCP Server 集成
+
+支持通过 MCP (Model Context Protocol) 连接外部工具服务器。MCP Server 配置文件位于 `mcp-servers/` 子目录。
+
+### MCP Server 配置格式
+
+```json
+{
+  "id": "server-id",
+  "command": "npx",
+  "args": ["-y", "@modelcontextprotocol/server-xxx", "arg1"],
+  "env": {
+    "API_KEY": "your-api-key"
+  },
+  "enabled": true
+}
+```
+
+配置字段说明：
+- `id`: MCP Server 唯一标识
+- `command`: 启动命令（如 npx, node, python 等）
+- `args`: 命令参数数组
+- `env`: 可选的环境变量
+- `enabled`: 是否启用（默认 true）
+
+### 文件系统访问示例
+
+内置的 `filesystem.json` 配置可让 Agent 访问本地文件系统：
+
+```json
+{
+  "id": "filesystem",
+  "command": "npx",
+  "args": ["-y", "@modelcontextprotocol/server-filesystem", "C:/Projects"],
+  "enabled": true
+}
+```
+
+启用后，Agent 将获得以下工具：
+- `read_file` - 读取文件内容
+- `read_multiple_files` - 批量读取文件
+- `write_file` - 写入文件
+- `create_directory` - 创建目录
+- `list_directory` - 列出目录内容
+- `move_file` - 移动/重命名文件
+- `search_files` - 搜索文件
+- `get_file_info` - 获取文件信息
+
+> **安全提示**：请谨慎配置允许访问的目录路径，避免暴露敏感文件。
+
+### 其他常用 MCP Server
+
+- `@modelcontextprotocol/server-github` - GitHub 仓库访问
+- `@modelcontextprotocol/server-postgres` - PostgreSQL 数据库访问
+- `@modelcontextprotocol/server-slack` - Slack 消息访问
+
+更多 MCP Server 参见: https://modelcontextprotocol.io/
 
 ## 与 Agent 专属工具的区别
 
