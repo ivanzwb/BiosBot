@@ -90,3 +90,42 @@
   font-size: 11px;
   font-weight: 500;
 }
+
+/* 工具调用子项样式 */
+.toolCalls {
+  margin-left: 24px;
+  margin-top: 4px;
+  padding-left: 8px;
+  border-left: 2px solid var(--color-border);
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.toolCall {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  color: var(--color-text-secondary);
+}
+
+.toolCallIcon {
+  font-size: 10px;
+  flex-shrink: 0;
+}
+
+.toolCallName {
+  font-family: 'SF Mono', Monaco, Menlo, monospace;
+  font-weight: 500;
+  color: var(--color-text-primary);
+}
+
+.toolCallArgs {
+  color: var(--color-text-tertiary, #888);
+  font-size: 10px;
+  max-width: 200px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}

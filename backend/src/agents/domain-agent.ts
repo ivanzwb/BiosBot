@@ -165,6 +165,7 @@ export function createDomainAgent(config: DomainAgentConfig): DomainAgent {
         extraTools: staticExtraTools,
         history: input.context?.history,
         mcpServers,
+        onToolCall: input.onToolCall,
       });
       return { answer };
     } catch (err) {

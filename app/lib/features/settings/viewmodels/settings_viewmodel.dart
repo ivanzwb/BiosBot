@@ -569,8 +569,8 @@ class SettingsViewModel extends ChangeNotifier {
     }
   }
 
-  /// 探测已安装 MCP 包的 tools
-  Future<void> probeMcpPackageTools(String packageName) async {
+  /// 探测已安装 MCP 包的 tools，返回探测结果
+  Future<McpProbeToolsResult> probeMcpPackageTools(String packageName) async {
     probingMcpTools = true;
     probedMcpTools = [];
     probedMcpPackage = null;
@@ -589,8 +589,10 @@ class SettingsViewModel extends ChangeNotifier {
       } else {
         mcpProbeError = '未检测到可用 Tools（可能需要配置启动参数）';
       }
+      return result;
     } catch (e) {
       mcpProbeError = e.toString();
+      rethrow;
     } finally {
       probingMcpTools = false;
       notifyListeners();

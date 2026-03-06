@@ -193,6 +193,39 @@ class ChatViewModel extends ChangeNotifier with LifecycleAware {
         _executionSteps[idx] = step;
         return;
       }
+    } else if (step.stepType == StepType.toolCall) {
+      // 工具调用步骤
+      const maxToolCallsPerAgent = 10;
+      final agentId = step.agentId ?? '__no_agent__';
+      final detail = step.detail;
+      final toolName = detail is Map<String, dynamic> ? detail['toolName'] as String? : null;
+
+      // 如果是 completed 状态，尝试找到同 agent + 同 toolName 的 running 步骤来更新
+      if (step.status == StepStatus.completed && toolName != null) {
+        final idx = _executionSteps.indexWhere((s) =>
+          s.stepType == StepType.toolCall &&
+          (s.agentId ?? '__no_agent__') == agentId &&
+          s.status == StepStatus.running &&
+          s.detail is Map<String, dynamic> &&
+          (s.detail as Map<String, dynamic>)['toolName'] == toolName
+        );
+        if (idx >= 0) {
+          _executionSteps[idx] = step;
+          return;
+        }
+      }
+
+      // 否则添加新条目，限制每个 Agent 最多保留最近 N 个
+      final existingToolCalls = _executionSteps
+          .where((s) => s.stepType == StepType.toolCall && (s.agentId ?? '__no_agent__') == agentId)
+          .toList();
+
+      if (existingToolCalls.length >= maxToolCallsPerAgent) {
+        final oldest = existingToolCalls.first;
+        _executionSteps.remove(oldest);
+      }
+      _executionSteps.add(step);
+      return;
     } else {
       // 对于其他步骤，查找同类型步骤进行更新
       final idx = _executionSteps.indexWhere((s) => s.stepType == step.stepType);

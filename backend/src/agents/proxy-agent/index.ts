@@ -16,8 +16,8 @@ import {
   DomainAgent,
   ProxyAgentRequest,
   ProxyAgentResult,
-  StepCallback,
   ExecutionStep,
+  ToolCallCallback,
 } from '../../types/agent.types';
 import { Skill } from '../../types/skill.types';
 import { loadSkills } from '../skill-loader';
@@ -108,7 +108,18 @@ async function classifyIntent(input: AgentInput): Promise<ClassifyResult> {
     const jsonMatch = raw.match(/\{[\s\S]*\}/);
     if (jsonMatch) {
       const parsed = JSON.parse(jsonMatch[0]) as ClassifyResult;
-      const domains = Array.isArray(parsed.domains) ? parsed.domains : [];
+      const rawDomains = Array.isArray(parsed.domains) ? parsed.domains : [];
+
+      // 过滤掉不在注册表中的 Agent ID，避免路由到不存在的 Agent
+      const validAgentIds = new Set(registeredAgents.map(a => a.id));
+      const domains = rawDomains.filter((id: string) => validAgentIds.has(id));
+
+      if (rawDomains.length > 0 && domains.length === 0) {
+        logger.warn('proxy-agent: LLM returned non-existent agents, falling back to direct answer', {
+          requested: rawDomains,
+          available: Array.from(validAgentIds)
+        });
+      }
 
       // 解析 steps：校验格式，确保是合法的 string[][]
       let steps: string[][] | undefined;
@@ -130,7 +141,10 @@ async function classifyIntent(input: AgentInput): Promise<ClassifyResult> {
       };
     }
   } catch (err) {
-    logger.error('proxy-agent classify error', { error: err });
+    logger.error('proxy-agent classify error', {
+      error: err instanceof Error ? err.message : String(err),
+      stack: err instanceof Error ? err.stack : undefined,
+    });
   }
 
   return { intent: 'chat', domains: [], confidence: 0.5 };
@@ -170,7 +184,7 @@ async function invokeDomainAgent(agentId: string, input: AgentInput): Promise<Ag
 // 通用对话（无匹配 Agent 时由 proxy-agent 自行回答）
 // ============================================================
 
-async function directAnswer(input: AgentInput): Promise<string> {
+async function directAnswer(input: AgentInput, onToolCall?: ToolCallCallback): Promise<string> {
   const proxyDir = path.resolve(__dirname);
 
   // 基础 prompt - 强调使用工具
@@ -209,6 +223,7 @@ async function directAnswer(input: AgentInput): Promise<string> {
     maxTokens: input.options?.maxTokens,
     history: input.context?.history,
     mcpServers: proxyMcpServers,
+    onToolCall,
   });
 }
 
@@ -242,7 +257,22 @@ export async function runProxyAgentWorkflow(request: ProxyAgentRequest): Promise
   if (classify.domains.length === 0) {
     // 无匹配 Agent → proxy-agent 自行回答
     emitStep({ stepType: 'direct_answer', description: '正在由通用助手直接回答...', status: 'running' });
-    const answer = await directAnswer(payload);
+    // 创建工具调用回调用于实时推送工具执行状态
+    const onToolCall: ToolCallCallback = (info) => {
+      logger.info('proxy-agent: onToolCall callback triggered (direct_answer)', { toolName: info.toolName, status: info.status });
+      const desc = info.status === 'start'
+        ? `正在执行 ${info.toolName}...`
+        : `${info.toolName} 执行完成`;
+      emitStep({
+        stepType: 'tool_call',
+        agentId: 'proxy-agent',
+        agentName: '通用助手',
+        description: desc,
+        status: info.status === 'start' ? 'running' : 'completed',
+        detail: { toolName: info.toolName, args: info.args, result: info.result },
+      });
+    };
+    const answer = await directAnswer(payload, onToolCall);
     emitStep({ stepType: 'direct_answer', description: '回答生成完成', status: 'completed' });
     return { classify, answer };
   }
@@ -278,7 +308,24 @@ export async function runProxyAgentWorkflow(request: ProxyAgentRequest): Promise
       const agentName = agentMeta?.name || agentId;
       logger.info(`proxy-agent: step ${stepIdx + 1}/${steps.length} — run "${agentId}"`);
       emitStep({ stepType: 'agent_start', agentId, agentName, description: `正在调用 ${agentName}...`, status: 'running' });
-      const output = await invokeDomainAgent(agentId, stepPayload);
+
+      // 创建工具调用回调，用于实时推送工具执行状态
+      const onToolCall: ToolCallCallback = (info) => {
+        logger.debug('proxy-agent: onToolCall triggered', { agentId, toolName: info.toolName, status: info.status });
+        const desc = info.status === 'start'
+          ? `正在执行 ${info.toolName}...`
+          : `${info.toolName} 执行完成`;
+        emitStep({
+          stepType: 'tool_call',
+          agentId,
+          agentName,
+          description: desc,
+          status: info.status === 'start' ? 'running' : 'completed',
+          detail: { toolName: info.toolName, args: info.args, result: info.result },
+        });
+      };
+
+      const output = await invokeDomainAgent(agentId, { ...stepPayload, onToolCall });
       emitStep({ stepType: 'agent_end', agentId, agentName, description: `${agentName} 处理完成`, status: 'completed' });
       agentOutputs.push({ agentId, output });
     } else {
@@ -291,7 +338,25 @@ export async function runProxyAgentWorkflow(request: ProxyAgentRequest): Promise
         emitStep({ stepType: 'agent_start', agentId, agentName, description: `正在调用 ${agentName}...`, status: 'running' });
       }
       const results = await Promise.allSettled(
-        step.map((agentId) => invokeDomainAgent(agentId, stepPayload))
+        step.map((agentId) => {
+          const agentMeta = agentRegistry.get(agentId);
+          const agentName = agentMeta?.name || agentId;
+          // 创建工具调用回调
+          const onToolCall: ToolCallCallback = (info) => {
+            const desc = info.status === 'start'
+              ? `正在执行 ${info.toolName}...`
+              : `${info.toolName} 执行完成`;
+            emitStep({
+              stepType: 'tool_call',
+              agentId,
+              agentName,
+              description: desc,
+              status: info.status === 'start' ? 'running' : 'completed',
+              detail: { toolName: info.toolName, args: info.args, result: info.result },
+            });
+          };
+          return invokeDomainAgent(agentId, { ...stepPayload, onToolCall });
+        })
       );
       for (let i = 0; i < step.length; i++) {
         const r = results[i];
@@ -389,7 +454,10 @@ async function aggregateOutputs(
       extraTools: rag.tools,
     });
   } catch (err) {
-    logger.error('proxy-agent aggregate error, falling back to simple join', { error: err });
+    logger.error('proxy-agent aggregate error, falling back to simple join', {
+      error: err instanceof Error ? err.message : String(err),
+      stack: err instanceof Error ? err.stack : undefined,
+    });
     return agentResults;
   }
 }

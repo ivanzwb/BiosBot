@@ -13,8 +13,10 @@
   "dependencies": {
     "@lancedb/lancedb": "^0.4.20",
     "@langchain/core": "^0.3.0",
+    "@langchain/mcp-adapters": "^0.6.0",
     "@langchain/openai": "^0.3.0",
-    "@modelcontextprotocol/sdk": "^1.27.1",
+    "@modelcontextprotocol/sdk": "^1.12.1",
+    "@modelcontextprotocol/server-everything": "^2026.1.26",
     "@modelcontextprotocol/server-filesystem": "^2026.1.14",
     "better-sqlite3": "^11.7.0",
     "cors": "^2.8.5",

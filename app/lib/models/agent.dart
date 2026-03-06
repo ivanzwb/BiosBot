@@ -392,12 +392,14 @@ class McpProbeToolsResult {
   final String packageName;
   final List<McpToolInfo> tools;
   final String? error;
+  final McpSuggestedConfig? mcpConfig;
 
   McpProbeToolsResult({
     required this.success,
     required this.packageName,
     required this.tools,
     this.error,
+    this.mcpConfig,
   });
 
   factory McpProbeToolsResult.fromJson(Map<String, dynamic> json) {
@@ -409,6 +411,36 @@ class McpProbeToolsResult {
               .toList() ??
           [],
       error: json['error'] as String?,
+      mcpConfig: json['mcpConfig'] != null
+          ? McpSuggestedConfig.fromJson(json['mcpConfig'] as Map<String, dynamic>)
+          : null,
+    );
+  }
+}
+
+/// MCP 建议配置（用于安装后自动填充表单）
+class McpSuggestedConfig {
+  final String id;
+  final String type;
+  final String command;
+  final List<String> args;
+  final bool enabled;
+
+  McpSuggestedConfig({
+    required this.id,
+    required this.type,
+    required this.command,
+    required this.args,
+    required this.enabled,
+  });
+
+  factory McpSuggestedConfig.fromJson(Map<String, dynamic> json) {
+    return McpSuggestedConfig(
+      id: json['id'] as String,
+      type: json['type'] as String? ?? 'local',
+      command: json['command'] as String,
+      args: (json['args'] as List<dynamic>?)?.map((e) => e.toString()).toList() ?? [],
+      enabled: json['enabled'] as bool? ?? true,
     );
   }
 }

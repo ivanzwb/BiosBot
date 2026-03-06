@@ -876,7 +876,19 @@ export default function SettingsPage() {
           if (probeResult.success && probeResult.tools.length > 0) {
             setMcpProbedTools(probeResult.tools);
             setMcpProbedPackage(result.packageName);
-            flash(`🔧 检测到 ${probeResult.tools.length} 个可用 Tools`);
+            // 自动填充 MCP Server 配置表单
+            if (probeResult.mcpConfig) {
+              setMcpDraft((prev) => ({
+                ...prev,
+                id: prev.id || probeResult.mcpConfig!.id,
+                type: 'local',
+                command: probeResult.mcpConfig!.command,
+                args: probeResult.mcpConfig!.args,
+                enabled: true,
+              }));
+              setMcpArgsText(probeResult.mcpConfig.args.join('\n'));
+            }
+            flash(`🔧 检测到 ${probeResult.tools.length} 个可用 Tools，已自动填充配置`);
           } else if (probeResult.error) {
             setMcpProbeError(probeResult.error);
             flash(`⚠️ Tools 探测失败: ${probeResult.error}`);
@@ -1729,7 +1741,7 @@ export default function SettingsPage() {
                               ⚠️ {mcpProbeError}
                             </div>
                           )}
-                          <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                          <div style={{ display: 'flex', gap: '8px', alignItems: 'center', marginBottom: '8px' }}>
                             <input
                               type="text"
                               value={mcpInstallPackage}
@@ -1761,7 +1773,23 @@ export default function SettingsPage() {
                               {mcpInstalling ? '安装中...' : '安装'}
                             </button>
                           </div>
-                          <p style={{ fontSize: '11px', color: '#64748b', margin: '4px 0 8px' }}>
+                          <div style={{ marginBottom: '8px' }}>
+                            <input
+                              type="text"
+                              value={mcpInstallRegistry}
+                              onChange={(e) => setMcpInstallRegistry(e.target.value)}
+                              placeholder="npm registry（可选，如 https://registry.npmmirror.com）"
+                              style={{
+                                width: '100%',
+                                padding: '8px 12px',
+                                border: '1px solid #94a3b8',
+                                borderRadius: '6px',
+                                fontSize: '12px',
+                                color: '#64748b',
+                              }}
+                            />
+                          </div>
+                          <p style={{ fontSize: '11px', color: '#64748b', margin: '0 0 8px' }}>
                             常用: @modelcontextprotocol/server-filesystem, server-github, server-puppeteer
                           </p>
                           {mcpInstalledPackages.length > 0 && (
@@ -2490,7 +2518,17 @@ export default function SettingsPage() {
                           {mcpInstalling ? '安装中...' : '安装'}
                         </button>
                       </div>
-                      <p style={{ fontSize: '11px', color: '#64748b', margin: '4px 0 8px' }}>
+                      <div style={{ marginBottom: '8px' }}>
+                        <input
+                          type="text"
+                          value={mcpInstallRegistry}
+                          onChange={(e) => setMcpInstallRegistry(e.target.value)}
+                          className={styles.input}
+                          placeholder="npm registry（可选，如 https://registry.npmmirror.com）"
+                          style={{ fontSize: '12px', color: '#64748b' }}
+                        />
+                      </div>
+                      <p style={{ fontSize: '11px', color: '#64748b', margin: '0 0 8px' }}>
                         常用: @modelcontextprotocol/server-filesystem, server-github, server-puppeteer
                       </p>
                       {mcpInstalledPackages.length > 0 && (

@@ -21,8 +21,8 @@ import { runWithSkills } from './skill-runner';
 import { createRagTool, buildRagPrompt } from './rag-tool';
 import { hasKnowledge } from './rag-service';
 import { loadAgentTools } from './tool-loader';
-import { loadGlobalTools, loadMcpTools } from './global-tool-loader';
-import { McpServerConfig, createMcpTools } from './mcp-client';
+import { loadGlobalTools, loadMcpTools, loadMcpServerConfigs } from './global-tool-loader';
+import { McpServerConfig, createMcpTools, extractAllowedDirs } from './mcp-client';
 import logger from '../infra/logger/logger';
 
 // ============================================================
@@ -226,6 +226,13 @@ export interface AgentRunOptions {
   history?: MessageRecord[];
   /** Agent 专属的 MCP Server 配置（加载该 Agent 专用的 MCP 工具） */
   mcpServers?: McpServerConfig[];
+  /** 工具调用回调（用于实时推送工具执行状态） */
+  onToolCall?: (info: {
+    toolName: string;
+    args?: Record<string, unknown>;
+    status: 'start' | 'end';
+    result?: string;
+  }) => void;
 }
 
 /**
@@ -249,6 +256,7 @@ export async function runAgent(options: AgentRunOptions): Promise<string> {
     extraTools: staticExtraTools = [],
     history = [],
     mcpServers = [],
+    onToolCall,
   } = options;
 
   // 1. 读取模型配置
@@ -308,13 +316,23 @@ export async function runAgent(options: AgentRunOptions): Promise<string> {
   // 8. 转换历史消息为 LangChain 格式（短期记忆）
   const historyMessages = convertHistoryToMessages(history);
 
-  // 9. 调用 runWithSkills
+  // 9. 第二层保护：将 MCP 允许的工作目录注入 system prompt
+  let workspaceDirHint = '';
+  const allMcpConfigs = [...loadMcpServerConfigs(), ...mcpServers];
+  const allAllowedDirs = allMcpConfigs.flatMap(cfg => extractAllowedDirs(cfg));
+  const uniqueDirs = [...new Set(allAllowedDirs)];
+  if (uniqueDirs.length > 0) {
+    workspaceDirHint = `\n\n**工作目录信息**：你的文件系统工具可以访问以下目录：${uniqueDirs.map(d => `\n- ${d}`).join('')}\n当使用文件系统工具时，请使用基于上述目录的**绝对路径**。`;
+  }
+
+  // 10. 调用 runWithSkills
   return runWithSkills({
     chat,
     skills,
-    systemPrompt: systemPrompt + rag.ragHint,
+    systemPrompt: systemPrompt + rag.ragHint + workspaceDirHint,
     userMessage,
     extraTools,
     historyMessages,
+    onToolCall,
   });
 }

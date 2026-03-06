@@ -5,6 +5,14 @@ import { Skill } from './skill.types';
 // Agent 通用输入 / 输出
 // ============================================================
 
+/** 工具调用回调（用于实时推送工具执行状态） */
+export type ToolCallCallback = (info: {
+  toolName: string;
+  args?: Record<string, unknown>;
+  status: 'start' | 'end';
+  result?: string;
+}) => void;
+
 export interface AgentInput {
   id: string;
   conversationId: string;
@@ -19,6 +27,8 @@ export interface AgentInput {
     temperature?: number;
     maxTokens?: number;
   };
+  /** 工具调用回调（用于实时推送工具执行状态） */
+  onToolCall?: ToolCallCallback;
 }
 
 export interface AgentOutput {
@@ -109,8 +119,16 @@ export type StepType =
   | 'route'           // 路由规划
   | 'agent_start'     // 开始调用领域Agent
   | 'agent_end'       // 领域Agent完成
+  | 'tool_call'       // 工具调用
   | 'aggregate'       // 聚合结果
   | 'direct_answer';  // 直接回答
+
+/** 工具调用信息（用于 tool_call 步骤的 detail） */
+export interface ToolCallInfo {
+  toolName: string;
+  args?: Record<string, unknown>;
+  result?: string;
+}
 
 /** 执行步骤信息 */
 export interface ExecutionStep {

@@ -652,12 +652,26 @@ WebSocket 路径：`ws://host:port/ws`
 - `skills/` — Markdown Skill 文件（YAML frontmatter + 正文内容）
 - `tools/` — JSON Tool 定义文件（可选）
 
+Skills 符合Agent Skills标准，参考https://agentskills.io/specification
+
+目录结构
+skill-name/
+├── SKILL.md          # Required
+├── scripts/          # optional
+├── references/       # optional
+└── assets/           # optional
+
 Skill 文件格式示例：
 ```markdown
 ---
 id: calculate-metrics
 name: 财务指标计算
 description: 根据财务数据计算 PE、PB、ROE 等常见指标
+license:
+metadata:
+  author: bios
+  version: "1.0"
+allowed-tools: tool1 tool2
 ---
 
 ## 指标计算方法

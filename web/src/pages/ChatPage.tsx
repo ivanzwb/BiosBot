@@ -10,7 +10,7 @@ import { ExecutionStep } from '../types/execution-step';
 import styles from './ChatPage.module.css';
 
 /** 轮询任务状态，直到完成或失败 (fallback) */
-async function pollTask(taskId: string, interval = 1000, maxAttempts = 120): Promise<api.Task> {
+async function pollTask(taskId: string, interval = 1000, maxAttempts = 600): Promise<api.Task> {
   for (let i = 0; i < maxAttempts; i++) {
     const task = await api.getTask(taskId);
     if (task.status === 'succeeded' || task.status === 'failed') return task;
@@ -31,6 +31,40 @@ function updateOrAddStep(steps: ExecutionStep[], newStep: ExecutionStep): Execut
       updated[idx] = newStep;
       return updated;
     }
+  } else if (newStep.stepType === 'tool_call') {
+    // 工具调用步骤
+    const MAX_TOOL_CALLS_PER_AGENT = 10;
+    const agentId = newStep.agentId || '__no_agent__';
+    const detail = newStep.detail as { toolName?: string } | undefined;
+    const toolName = detail?.toolName;
+
+    // 如果是 completed 状态，尝试找到同 agent + 同 toolName 的 running 步骤来更新
+    if (newStep.status === 'completed' && toolName) {
+      const idx = steps.findIndex(
+        (s) =>
+          s.stepType === 'tool_call' &&
+          (s.agentId || '__no_agent__') === agentId &&
+          s.status === 'running' &&
+          (s.detail as { toolName?: string } | undefined)?.toolName === toolName
+      );
+      if (idx >= 0) {
+        const updated = [...steps];
+        updated[idx] = newStep;
+        return updated;
+      }
+    }
+
+    // 否则添加新条目，限制每个 Agent 最多保留最近 N 个
+    const existingToolCalls = steps.filter(
+      (s) => s.stepType === 'tool_call' && (s.agentId || '__no_agent__') === agentId
+    );
+    const otherSteps = steps.filter(
+      (s) => s.stepType !== 'tool_call' || (s.agentId || '__no_agent__') !== agentId
+    );
+    const updatedToolCalls = existingToolCalls.length >= MAX_TOOL_CALLS_PER_AGENT
+      ? [...existingToolCalls.slice(1), newStep]
+      : [...existingToolCalls, newStep];
+    return [...otherSteps, ...updatedToolCalls];
   } else {
     // 对于其他步骤，查找同类型步骤进行更新
     const idx = steps.findIndex((s) => s.stepType === newStep.stepType);
@@ -106,6 +140,7 @@ export default function ChatPage() {
 
     // 提前注册步骤监听（通过 conversationId 过滤，因为 taskId 还没拿到）
     stepUnsub = onWsEventType('step:update', (payload: { conversationId?: string; taskId: string; step: ExecutionStep }) => {
+      console.log('[ChatPage] step:update received', payload.step.stepType, payload.step.description, payload.step);
       // 如果已经拿到 taskId，精确匹配
       if (currentTaskId && payload.taskId === currentTaskId) {
         setExecutionSteps((prev) => updateOrAddStep(prev, payload.step));

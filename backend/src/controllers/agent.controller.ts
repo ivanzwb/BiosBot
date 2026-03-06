@@ -1445,11 +1445,19 @@ export async function probeMcpPackageTools(req: Request, res: Response, next: Ne
 
     logger.info('agent.controller: probing MCP package tools', { packageName, customArgs });
 
+    // 从包名生成建议的 server ID
+    // @modelcontextprotocol/server-filesystem => server-filesystem
+    // mcp-server-xxx => mcp-server-xxx
+    const suggestedId = packageName.includes('/')
+      ? packageName.split('/').pop() || packageName.replace(/[^a-zA-Z0-9-]/g, '-')
+      : packageName.replace(/[^a-zA-Z0-9-]/g, '-');
+
     // 创建临时的 MCP Server 配置
+    const suggestedArgs = ['-y', packageName, ...(customArgs || [])];
     const tempConfig: McpServerConfig = {
       id: `__probe__${Date.now()}`,
       command: 'npx',
-      args: ['-y', packageName, ...(customArgs || [])],
+      args: suggestedArgs,
       enabled: true,
     };
 
@@ -1464,10 +1472,18 @@ export async function probeMcpPackageTools(req: Request, res: Response, next: Ne
         toolNames: tools.map(t => t.name),
       });
 
+      // 返回建议的 MCP Server 配置，供前端自动填充表单
       res.json({
         success: true,
         packageName,
         tools,
+        mcpConfig: {
+          id: suggestedId,
+          type: 'local',
+          command: 'npx',
+          args: suggestedArgs,
+          enabled: true,
+        },
       });
     } catch (probeErr) {
       // 确保关闭临时连接

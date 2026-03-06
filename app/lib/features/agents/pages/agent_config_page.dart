@@ -1334,6 +1334,7 @@ class _AgentConfigPageState extends State<AgentConfigPage>
     String? probeError;
     bool probing = false;
     final packageCtrl = TextEditingController();
+    final registryCtrl = TextEditingController();
 
     showModalBottomSheet(
       context: context,
@@ -1513,7 +1514,10 @@ class _AgentConfigPageState extends State<AgentConfigPage>
                                       probedPackage = null;
                                     });
                                     try {
-                                      final result = await _svc.installMcpPackage(packageCtrl.text.trim());
+                                      final result = await _svc.installMcpPackage(
+                                        packageCtrl.text.trim(),
+                                        registry: registryCtrl.text.trim().isEmpty ? null : registryCtrl.text.trim(),
+                                      );
                                       if (result.success) {
                                         // 探测 tools
                                         setBottomState(() => probing = true);
@@ -1524,6 +1528,16 @@ class _AgentConfigPageState extends State<AgentConfigPage>
                                               probedTools = probeResult.tools;
                                               probedPackage = result.packageName;
                                             });
+                                            // 自动填充表单配置
+                                            if (probeResult.mcpConfig != null) {
+                                              final cfg = probeResult.mcpConfig!;
+                                              if (idCtrl.text.isEmpty) {
+                                                idCtrl.text = cfg.id;
+                                              }
+                                              commandCtrl.text = cfg.command;
+                                              argsCtrl.text = cfg.args.join('\n');
+                                              setBottomState(() {});
+                                            }
                                           } else {
                                             setBottomState(() => probeError = probeResult.error ?? '未检测到 Tools');
                                           }
@@ -1552,6 +1566,18 @@ class _AgentConfigPageState extends State<AgentConfigPage>
                                       : const Text('安装'),
                                 ),
                               ],
+                            ),
+                            const SizedBox(height: 8),
+                            // registry 输入
+                            TextField(
+                              controller: registryCtrl,
+                              decoration: InputDecoration(
+                                isDense: true,
+                                hintText: 'npm registry（可选，如 https://registry.npmmirror.com）',
+                                hintStyle: TextStyle(fontSize: 11, color: Theme.of(context).colorScheme.outline),
+                                contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                              ),
+                              style: TextStyle(fontSize: 12, color: Theme.of(context).colorScheme.outline),
                             ),
                             const SizedBox(height: 8),
                             Text('常用: @modelcontextprotocol/server-filesystem',

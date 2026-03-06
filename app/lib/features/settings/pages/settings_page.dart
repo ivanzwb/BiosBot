@@ -620,7 +620,18 @@ class _SettingsPageState extends State<SettingsPage> {
                 // 本地 MCP Server 配置
                 if (serverType == 'local') ...[
                   // 安装 npm 包区域
-                  _McpInstallSection(vm: vm, setBottomState: setBottomState),
+                  _McpInstallSection(
+                    vm: vm,
+                    setBottomState: setBottomState,
+                    onConfigDetected: (cfg) {
+                      if (idCtrl.text.isEmpty) {
+                        idCtrl.text = cfg.id;
+                      }
+                      commandCtrl.text = cfg.command;
+                      argsCtrl.text = cfg.args.join('\n');
+                      setBottomState(() {});
+                    },
+                  ),
                   const SizedBox(height: 12),
                   TextField(
                     controller: commandCtrl,
@@ -2157,6 +2168,7 @@ class _ProxyAgentConfigState extends State<_ProxyAgentConfig>
     String? probeError;
     bool probing = false;
     final packageCtrl = TextEditingController();
+    final registryCtrl = TextEditingController();
 
     showModalBottomSheet(
       context: context,
@@ -2335,7 +2347,10 @@ class _ProxyAgentConfigState extends State<_ProxyAgentConfig>
                                       probedPackage = null;
                                     });
                                     try {
-                                      final result = await widget.vm.installMcpPackage(packageCtrl.text.trim());
+                                      final result = await widget.vm.installMcpPackage(
+                                        packageCtrl.text.trim(),
+                                        registry: registryCtrl.text.trim().isEmpty ? null : registryCtrl.text.trim(),
+                                      );
                                       if (result.success) {
                                         // 探测 tools
                                         setBottomState(() => probing = true);
@@ -2346,6 +2361,16 @@ class _ProxyAgentConfigState extends State<_ProxyAgentConfig>
                                               probedTools = probeResult.tools;
                                               probedPackage = result.packageName;
                                             });
+                                            // 自动填充表单配置
+                                            if (probeResult.mcpConfig != null) {
+                                              final cfg = probeResult.mcpConfig!;
+                                              if (idCtrl.text.isEmpty) {
+                                                idCtrl.text = cfg.id;
+                                              }
+                                              commandCtrl.text = cfg.command;
+                                              argsCtrl.text = cfg.args.join('\n');
+                                              setBottomState(() {});
+                                            }
                                           } else {
                                             setBottomState(() => probeError = probeResult.error ?? '未检测到 Tools');
                                           }
@@ -2374,6 +2399,18 @@ class _ProxyAgentConfigState extends State<_ProxyAgentConfig>
                                       : const Text('安装'),
                                 ),
                               ],
+                            ),
+                            const SizedBox(height: 8),
+                            // registry 输入
+                            TextField(
+                              controller: registryCtrl,
+                              decoration: InputDecoration(
+                                isDense: true,
+                                hintText: 'npm registry（可选，如 https://registry.npmmirror.com）',
+                                hintStyle: TextStyle(fontSize: 11, color: Theme.of(context).colorScheme.outline),
+                                contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                              ),
+                              style: TextStyle(fontSize: 12, color: Theme.of(context).colorScheme.outline),
                             ),
                             const SizedBox(height: 8),
                             Text('常用: @modelcontextprotocol/server-filesystem',
@@ -2998,10 +3035,12 @@ class _McpServerTileState extends State<_McpServerTile> {
 class _McpInstallSection extends StatefulWidget {
   final SettingsViewModel vm;
   final StateSetter setBottomState;
+  final void Function(McpSuggestedConfig config)? onConfigDetected;
 
   const _McpInstallSection({
     required this.vm,
     required this.setBottomState,
+    this.onConfigDetected,
   });
 
   @override
@@ -3221,9 +3260,13 @@ class _McpInstallSectionState extends State<_McpInstallSection> {
                         );
                         widget.setBottomState(() {});
                         if (success) {
-                          // 探测 tools
-                          await vm.probeMcpPackageTools(_packageController.text.trim());
+                          // 探测 tools 并自动填充配置
+                          final probeResult = await vm.probeMcpPackageTools(_packageController.text.trim());
                           widget.setBottomState(() {});
+                          // 回调通知父组件自动填充表单
+                          if (probeResult.success && probeResult.mcpConfig != null && widget.onConfigDetected != null) {
+                            widget.onConfigDetected!(probeResult.mcpConfig!);
+                          }
                         }
                       },
                 icon: vm.installingMcpPackage

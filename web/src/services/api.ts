@@ -570,6 +570,13 @@ export interface McpProbeToolsResult {
   packageName: string;
   tools: McpToolInfo[];
   error?: string;
+  mcpConfig?: {
+    id: string;
+    type: 'local';
+    command: string;
+    args: string[];
+    enabled: boolean;
+  };
 }
 
 export function probeMcpPackageTools(

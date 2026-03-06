@@ -88,6 +88,7 @@ export default function AgentConfigModal({ agent, onClose, onSaved }: Props) {
   // MCP Package Install
   const [mcpShowInstall, setMcpShowInstall] = useState(false);
   const [mcpInstallPackage, setMcpInstallPackage] = useState('');
+  const [mcpInstallRegistry, setMcpInstallRegistry] = useState('');
   const [mcpInstalling, setMcpInstalling] = useState(false);
   const [mcpInstalledPackages, setMcpInstalledPackages] = useState<api.InstalledMcpPackage[]>([]);
   const [mcpInstallError, setMcpInstallError] = useState<string | null>(null);
@@ -413,7 +414,7 @@ export default function AgentConfigModal({ agent, onClose, onSaved }: Props) {
     setMcpProbedPackage(null);
     setMcpProbeError(null);
     try {
-      const result = await api.installMcpPackage(mcpInstallPackage.trim());
+      const result = await api.installMcpPackage(mcpInstallPackage.trim(), mcpInstallRegistry.trim() || undefined);
       if (result.success) {
         setToast(`✅ ${result.packageName} 安装成功，正在检测可用 Tools...`);
         setMcpInstallError(null);
@@ -426,7 +427,18 @@ export default function AgentConfigModal({ agent, onClose, onSaved }: Props) {
           if (probeResult.success && probeResult.tools.length > 0) {
             setMcpProbedTools(probeResult.tools);
             setMcpProbedPackage(result.packageName);
-            setToast(`🔧 检测到 ${probeResult.tools.length} 个可用 Tools`);
+            // 自动填充 MCP Server 配置表单
+            if (probeResult.mcpConfig) {
+              setMcpDraft((prev) => ({
+                ...prev,
+                id: prev.id || probeResult.mcpConfig!.id,
+                type: 'local',
+                command: probeResult.mcpConfig!.command,
+                args: probeResult.mcpConfig!.args,
+                enabled: true,
+              }));
+            }
+            setToast(`🔧 检测到 ${probeResult.tools.length} 个可用 Tools，已自动填充配置`);
           } else if (probeResult.error) {
             setMcpProbeError(probeResult.error);
           } else {
@@ -1294,7 +1306,7 @@ export default function AgentConfigModal({ agent, onClose, onSaved }: Props) {
                                   ⚠️ {mcpProbeError}
                                 </div>
                               )}
-                              <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                              <div style={{ display: 'flex', gap: '8px', alignItems: 'center', marginBottom: '8px' }}>
                                 <input
                                   type="text"
                                   value={mcpInstallPackage}
@@ -1326,7 +1338,23 @@ export default function AgentConfigModal({ agent, onClose, onSaved }: Props) {
                                   {mcpInstalling ? '安装中...' : '安装'}
                                 </button>
                               </div>
-                              <p style={{ fontSize: '11px', color: '#64748b', margin: '4px 0 8px' }}>
+                              <div style={{ display: 'flex', gap: '8px', alignItems: 'center', marginBottom: '8px' }}>
+                                <input
+                                  type="text"
+                                  value={mcpInstallRegistry}
+                                  onChange={(e) => setMcpInstallRegistry(e.target.value)}
+                                  placeholder="npm registry（可选，如 https://registry.npmmirror.com）"
+                                  style={{
+                                    flex: 1,
+                                    padding: '8px 12px',
+                                    border: '1px solid #94a3b8',
+                                    borderRadius: '6px',
+                                    fontSize: '12px',
+                                    color: '#64748b',
+                                  }}
+                                />
+                              </div>
+                              <p style={{ fontSize: '11px', color: '#64748b', margin: '0 0 8px' }}>
                                 常用: @modelcontextprotocol/server-filesystem, server-github, server-puppeteer
                               </p>
                               {mcpInstalledPackages.length > 0 && (

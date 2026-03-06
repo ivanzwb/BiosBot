@@ -95,7 +95,7 @@ export function buildZodSchema(params: ToolParamDef[]): z.ZodObject<any> {
       default:
         base = z.string().describe(p.description);
     }
-    shape[p.name] = p.required === false ? base.optional() : base;
+    shape[p.name] = p.required === false ? base.optional().nullable() : base;
   }
   return z.object(shape);
 }

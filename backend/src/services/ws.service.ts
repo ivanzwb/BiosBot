@@ -84,6 +84,7 @@ export type StepType =
   | 'route'           // 路由规划
   | 'agent_start'     // 开始调用领域Agent
   | 'agent_end'       // 领域Agent完成
+  | 'tool_call'       // 工具调用
   | 'aggregate'       // 聚合结果
   | 'direct_answer';  // 直接回答
 
@@ -104,7 +105,7 @@ export function broadcastExecutionStep(
   taskId: string,
   step: ExecutionStep
 ): void {
-  logger.debug('ws.service: broadcasting step:update', { conversationId, taskId, stepType: step.stepType, status: step.status });
+  logger.info('ws.service: broadcasting step:update', { conversationId, taskId, stepType: step.stepType, status: step.status, agentId: step.agentId });
   broadcast({
     type: 'step:update',
     payload: { conversationId, taskId, step },

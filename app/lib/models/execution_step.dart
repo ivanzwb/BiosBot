@@ -4,6 +4,7 @@ enum StepType {
   route,       // 路由规划
   agentStart,  // 开始调用领域Agent
   agentEnd,    // 领域Agent完成
+  toolCall,    // 工具调用
   aggregate,   // 聚合结果
   directAnswer // 直接回答
 }
@@ -56,6 +57,8 @@ class ExecutionStep {
         return StepType.agentStart;
       case 'agent_end':
         return StepType.agentEnd;
+      case 'tool_call':
+        return StepType.toolCall;
       case 'aggregate':
         return StepType.aggregate;
       case 'direct_answer':
@@ -88,6 +91,8 @@ class ExecutionStep {
       case StepType.agentStart:
       case StepType.agentEnd:
         return '🤖';
+      case StepType.toolCall:
+        return '⚙️';
       case StepType.aggregate:
         return '📊';
       case StepType.directAnswer:
