@@ -462,6 +462,66 @@
   color: var(--color-primary);
 }
 
+/* ===== Skill file management ===== */
+.skillFilesSection {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-top: 4px;
+  padding: 10px;
+  background: var(--color-bg);
+  border-radius: var(--radius);
+  border: 1px solid var(--color-border);
+}
+
+.skillFileCategory {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.skillFileCatHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.skillFileCatLabel {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--color-text-secondary);
+  text-transform: capitalize;
+}
+
+.skillFileList {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.skillFileItem {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 3px 6px;
+  font-size: 12px;
+  background: var(--color-surface);
+  border-radius: 4px;
+}
+
+.skillFileName {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.skillFileSize {
+  color: var(--color-text-secondary);
+  font-size: 11px;
+  flex-shrink: 0;
+}
+
 /* ===== Tool management ===== */
 .toolParamsSection {
   display: flex;
@@ -628,6 +688,56 @@
 .tabActive {
   color: var(--color-primary);
   border-bottom-color: var(--color-primary);
+}
+
+/* Section header inside tabs */
+.sectionHeader {
+  margin: 20px 0 4px;
+  padding-bottom: 6px;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--color-text);
+  border-bottom: 1px solid var(--color-border);
+}
+
+/* Tool chips picker for allowedTools */
+.toolChipsPicker {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: -4px 0 8px;
+}
+.toolChipsGroup {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px;
+}
+.toolChipsLabel {
+  font-size: 11px;
+  color: var(--color-text-secondary);
+  margin-right: 2px;
+  white-space: nowrap;
+}
+.toolChip {
+  display: inline-block;
+  padding: 2px 8px;
+  font-size: 11px;
+  border-radius: 12px;
+  border: 1px solid var(--color-border);
+  background: var(--color-bg-secondary, #f1f5f9);
+  color: var(--color-text-secondary);
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s, border-color 0.15s;
+}
+.toolChip:hover {
+  border-color: var(--color-primary);
+  color: var(--color-primary);
+}
+.toolChipActive {
+  background: var(--color-primary);
+  border-color: var(--color-primary);
+  color: #fff;
 }
 
 /* ===== Tab Panel (scrollable) ===== */

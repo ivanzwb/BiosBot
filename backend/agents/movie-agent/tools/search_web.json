@@ -1,0 +1,14 @@
+{
+  "id": "search_web",
+  "name": "search_web",
+  "description": "搜索互联网",
+  "parameters": [],
+  "handler": {
+    "type": "http",
+    "url": "https://www.baidu.com",
+    "method": "GET",
+    "headers": {},
+    "bodyTemplate": ""
+  },
+  "enabled": true
+}

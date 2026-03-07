@@ -290,11 +290,22 @@ export function ingestDocuments(
 // Skill 管理
 // ============================================================
 
+export interface SkillFile {
+  name: string;
+  size: number;
+}
+
 export interface SkillInfo {
   id: string;
   name: string;
   description: string;
   content: string;
+  license?: string;
+  metadata?: Record<string, string>;
+  allowedTools?: string[];
+  scripts?: SkillFile[];
+  references?: SkillFile[];
+  assets?: SkillFile[];
 }
 
 export function listSkills(agentId: string): Promise<SkillInfo[]> {
@@ -303,7 +314,7 @@ export function listSkills(agentId: string): Promise<SkillInfo[]> {
 
 export function createSkill(
   agentId: string,
-  skill: { id: string; name: string; description?: string; content: string },
+  skill: { id: string; name: string; description?: string; content: string; license?: string; metadata?: Record<string, string>; allowedTools?: string[] },
 ): Promise<{ success: boolean; skill: SkillInfo }> {
   return request(`/agents/${agentId}/skills`, {
     method: 'POST',
@@ -314,7 +325,7 @@ export function createSkill(
 export function updateSkill(
   agentId: string,
   skillId: string,
-  fields: { name?: string; description?: string; content?: string },
+  fields: { name?: string; description?: string; content?: string; license?: string; metadata?: Record<string, string>; allowedTools?: string[] },
 ): Promise<{ success: boolean; skill: SkillInfo }> {
   return request(`/agents/${agentId}/skills/${encodeURIComponent(skillId)}`, {
     method: 'PUT',
@@ -326,6 +337,54 @@ export function deleteSkill(agentId: string, skillId: string): Promise<{ success
   return request(`/agents/${agentId}/skills/${encodeURIComponent(skillId)}`, {
     method: 'DELETE',
   });
+}
+
+export function uploadSkillZip(
+  agentId: string,
+  file: File,
+): Promise<{ success: boolean; skill: SkillInfo }> {
+  const form = new FormData();
+  form.append('file', file);
+  return request(`/agents/${agentId}/skills/upload-zip`, {
+    method: 'POST',
+    body: form,
+    headers: {},  // let browser set Content-Type with boundary
+  });
+}
+
+export function uploadSkillFile(
+  agentId: string,
+  skillId: string,
+  category: 'scripts' | 'references' | 'assets',
+  file: File,
+): Promise<{ success: boolean; fileName: string; size: number; skill: SkillInfo }> {
+  const form = new FormData();
+  form.append('file', file);
+  return request(`/agents/${agentId}/skills/${encodeURIComponent(skillId)}/files/${category}`, {
+    method: 'POST',
+    body: form,
+    headers: {},
+  });
+}
+
+export function deleteSkillFile(
+  agentId: string,
+  skillId: string,
+  category: 'scripts' | 'references' | 'assets',
+  fileName: string,
+): Promise<{ success: boolean; skill: SkillInfo }> {
+  return request(`/agents/${agentId}/skills/${encodeURIComponent(skillId)}/files/${category}/${encodeURIComponent(fileName)}`, {
+    method: 'DELETE',
+  });
+}
+
+export function getSkillFileUrl(
+  agentId: string,
+  skillId: string,
+  category: 'scripts' | 'references' | 'assets',
+  fileName: string,
+): string {
+  return `${BASE}/agents/${encodeURIComponent(agentId)}/skills/${encodeURIComponent(skillId)}/files/${category}/${encodeURIComponent(fileName)}`;
 }
 
 // ============================================================

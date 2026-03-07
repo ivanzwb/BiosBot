@@ -453,10 +453,44 @@ function paramStr(val: string | string[] | undefined): string {
 }
 
 /**
- * 将 Skill 对象序列化为 Markdown（YAML frontmatter + content）。
+ * 将 Skill 对象序列化为 SKILL.md（YAML frontmatter + content）。
+ * 支持扩展字段：license、metadata.*、allowed-tools。
  */
-function serializeSkillMd(skill: { id: string; name: string; description: string; content: string }): string {
-  return `---\nid: ${skill.id}\nname: ${skill.name}\ndescription: ${skill.description}\n---\n${skill.content}\n`;
+function serializeSkillMd(skill: {
+  id: string; name: string; description: string; content: string;
+  license?: string; metadata?: Record<string, string>; allowedTools?: string[];
+}): string {
+  const lines = [
+    '---',
+    `id: ${skill.id}`,
+    `name: ${skill.name}`,
+    `description: ${skill.description}`,
+  ];
+  if (skill.license) lines.push(`license: ${skill.license}`);
+  if (skill.metadata) {
+    for (const [k, v] of Object.entries(skill.metadata)) {
+      lines.push(`metadata.${k}: ${v}`);
+    }
+  }
+  if (skill.allowedTools?.length) lines.push(`allowed-tools: ${skill.allowedTools.join(' ')}`);
+  lines.push('---');
+  return lines.join('\n') + '\n' + skill.content + '\n';
+}
+
+/**
+ * 定位 Skill 在磁盘上的路径。
+ * 优先匹配目录格式 skills/<skillId>/SKILL.md，回退到旧格式 skills/<skillId>.md。
+ * 返回 { type, dirPath, filePath } 或 null。
+ */
+function locateSkillPath(skillsDir: string, skillId: string): { type: 'dir' | 'file'; dirPath: string; filePath: string } | null {
+  const dirPath = path.join(skillsDir, skillId);
+  const skillMd = path.join(dirPath, 'SKILL.md');
+  if (fs.existsSync(skillMd)) return { type: 'dir', dirPath, filePath: skillMd };
+
+  const legacyPath = path.join(skillsDir, `${skillId}.md`);
+  if (fs.existsSync(legacyPath)) return { type: 'file', dirPath: '', filePath: legacyPath };
+
+  return null;
 }
 
 /**
@@ -479,7 +513,7 @@ export function listSkills(req: Request, res: Response, next: NextFunction): voi
 /**
  * POST /api/agents/:id/skills
  *
- * 创建新的 Skill（写入 skills/<id>.md ）。
+ * 创建新的 Skill（创建 skills/<id>/SKILL.md 目录结构）。
  */
 export function createSkill(req: Request, res: Response, next: NextFunction): void {
   try {
@@ -487,9 +521,15 @@ export function createSkill(req: Request, res: Response, next: NextFunction): vo
     const agentDir = resolveAgentDir(agentId, res);
     if (!agentDir) return;
 
-    const { id, name, description, content } = req.body;
+    const { id, name, description, content, license, metadata, allowedTools } = req.body;
     if (!id || !name || !content) {
       res.status(400).json({ code: 'INVALID_PARAMS', message: 'id, name and content are required' });
+      return;
+    }
+
+    // 校验 id 合法性（仅允许字母、数字、短横线、下划线）
+    if (!/^[a-zA-Z0-9_-]+$/.test(id)) {
+      res.status(400).json({ code: 'INVALID_PARAMS', message: 'id must only contain letters, digits, hyphens, and underscores' });
       return;
     }
 
@@ -498,20 +538,29 @@ export function createSkill(req: Request, res: Response, next: NextFunction): vo
       fs.mkdirSync(skillsDir, { recursive: true });
     }
 
-    const filePath = path.join(skillsDir, `${id}.md`);
-    if (fs.existsSync(filePath)) {
+    // 检查目录格式和旧格式是否已存在
+    const skillDir = path.join(skillsDir, id);
+    const legacyPath = path.join(skillsDir, `${id}.md`);
+    if (fs.existsSync(skillDir) || fs.existsSync(legacyPath)) {
       res.status(409).json({ code: 'CONFLICT', message: `Skill "${id}" already exists` });
       return;
     }
 
-    fs.writeFileSync(filePath, serializeSkillMd({ id, name, description: description || '', content }), 'utf-8');
+    // 创建目录结构
+    fs.mkdirSync(skillDir, { recursive: true });
+    const skillMdPath = path.join(skillDir, 'SKILL.md');
+    fs.writeFileSync(skillMdPath, serializeSkillMd({
+      id, name, description: description || '', content,
+      license, metadata, allowedTools,
+    }), 'utf-8');
 
     // 热刷新 Agent 以加载新 Skill
     discoverAndRegisterAgents(true);
     loadProxySkills();
 
+    const skill = loadSkills(agentDir).find(s => s.id === id);
     logger.info('agent.controller: created skill', { agentId, skillId: id });
-    res.status(201).json({ success: true, skill: { id, name, description: description || '', content } });
+    res.status(201).json({ success: true, skill: skill || { id, name, description: description || '', content } });
   } catch (err) {
     next(err);
   }
@@ -520,7 +569,7 @@ export function createSkill(req: Request, res: Response, next: NextFunction): vo
 /**
  * PUT /api/agents/:id/skills/:skillId
  *
- * 更新已有 Skill 的内容。
+ * 更新已有 Skill 的 SKILL.md 内容。支持目录格式和旧单文件格式。
  */
 export function updateSkill(req: Request, res: Response, next: NextFunction): void {
   try {
@@ -529,13 +578,25 @@ export function updateSkill(req: Request, res: Response, next: NextFunction): vo
     if (!agentDir) return;
 
     const skillId = paramStr(req.params.skillId);
-    const { name, description, content } = req.body;
+    const { name, description, content, license, metadata, allowedTools } = req.body;
 
     const skillsDir = path.join(agentDir, 'skills');
-    const filePath = path.join(skillsDir, `${skillId}.md`);
-    if (!fs.existsSync(filePath)) {
+    const loc = locateSkillPath(skillsDir, skillId);
+    if (!loc) {
       res.status(404).json({ code: 'NOT_FOUND', message: `Skill "${skillId}" not found` });
       return;
+    }
+
+    // 如果旧格式则迁移到目录格式
+    if (loc.type === 'file') {
+      const newDir = path.join(skillsDir, skillId);
+      fs.mkdirSync(newDir, { recursive: true });
+      // 读取旧文件内容，写到新目录
+      const oldContent = fs.readFileSync(loc.filePath, 'utf-8');
+      fs.writeFileSync(path.join(newDir, 'SKILL.md'), oldContent, 'utf-8');
+      fs.unlinkSync(loc.filePath);
+      loc.filePath = path.join(newDir, 'SKILL.md');
+      loc.type = 'dir' as const;
     }
 
     // 读取旧内容以保留未传入的字段
@@ -545,16 +606,20 @@ export function updateSkill(req: Request, res: Response, next: NextFunction): vo
       name: name ?? existing?.name ?? skillId,
       description: description ?? existing?.description ?? '',
       content: content ?? existing?.content ?? '',
+      license: license ?? existing?.license,
+      metadata: metadata ?? existing?.metadata,
+      allowedTools: allowedTools ?? existing?.allowedTools,
     };
 
-    fs.writeFileSync(filePath, serializeSkillMd(merged), 'utf-8');
+    fs.writeFileSync(loc.filePath, serializeSkillMd(merged), 'utf-8');
 
     // 热刷新
     discoverAndRegisterAgents(true);
     loadProxySkills();
 
+    const skill = loadSkills(agentDir).find(s => s.id === skillId);
     logger.info('agent.controller: updated skill', { agentId, skillId });
-    res.json({ success: true, skill: merged });
+    res.json({ success: true, skill: skill || merged });
   } catch (err) {
     next(err);
   }
@@ -563,7 +628,7 @@ export function updateSkill(req: Request, res: Response, next: NextFunction): vo
 /**
  * DELETE /api/agents/:id/skills/:skillId
  *
- * 删除指定 Skill 文件。
+ * 删除指定 Skill（目录或单文件）。
  */
 export function deleteSkill(req: Request, res: Response, next: NextFunction): void {
   try {
@@ -573,14 +638,18 @@ export function deleteSkill(req: Request, res: Response, next: NextFunction): vo
 
     const skillId = paramStr(req.params.skillId);
     const skillsDir = path.join(agentDir, 'skills');
-    const filePath = path.join(skillsDir, `${skillId}.md`);
+    const loc = locateSkillPath(skillsDir, skillId);
 
-    if (!fs.existsSync(filePath)) {
+    if (!loc) {
       res.status(404).json({ code: 'NOT_FOUND', message: `Skill "${skillId}" not found` });
       return;
     }
 
-    fs.unlinkSync(filePath);
+    if (loc.type === 'dir') {
+      fs.rmSync(loc.dirPath, { recursive: true, force: true });
+    } else {
+      fs.unlinkSync(loc.filePath);
+    }
 
     // 热刷新
     discoverAndRegisterAgents(true);
@@ -588,6 +657,270 @@ export function deleteSkill(req: Request, res: Response, next: NextFunction): vo
 
     logger.info('agent.controller: deleted skill', { agentId, skillId });
     res.json({ success: true });
+  } catch (err) {
+    next(err);
+  }
+}
+
+// ============================================================
+// Skill Zip Upload & File Management
+// ============================================================
+
+import AdmZip from 'adm-zip';
+
+/** multer 配置：Skill Zip 上传（最大 50 MB） */
+const skillZipUpload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 50 * 1024 * 1024 },
+});
+export const skillZipUploadMiddleware = skillZipUpload.single('file');
+
+/** multer 配置：Skill 单文件上传（最大 10 MB） */
+const skillFileUpload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 10 * 1024 * 1024 },
+});
+export const skillFileUploadMiddleware = skillFileUpload.single('file');
+
+/** 允许的 Skill 子目录类别 */
+const SKILL_FILE_CATEGORIES = ['scripts', 'references', 'assets'] as const;
+type SkillFileCategory = typeof SKILL_FILE_CATEGORIES[number];
+
+function isValidCategory(cat: string): cat is SkillFileCategory {
+  return (SKILL_FILE_CATEGORIES as readonly string[]).includes(cat);
+}
+
+/**
+ * POST /api/agents/:id/skills/upload-zip
+ *
+ * 上传完整 Skill Zip 包，解压到 skills/<skill-name>/ 目录。
+ * Zip 结构：根目录下必须包含 SKILL.md，可选 scripts/, references/, assets/。
+ */
+export function uploadSkillZip(req: Request, res: Response, next: NextFunction): void {
+  try {
+    const agentId = paramStr(req.params.id);
+    const agentDir = resolveAgentDir(agentId, res);
+    if (!agentDir) return;
+
+    if (!req.file) {
+      res.status(400).json({ code: 'INVALID_PARAMS', message: 'No zip file uploaded' });
+      return;
+    }
+
+    const zip = new AdmZip(req.file.buffer);
+    const entries = zip.getEntries();
+
+    // 查找 SKILL.md（可能在根目录或嵌套一层目录中）
+    let rootPrefix = '';
+    const skillMdEntry = entries.find(e => !e.isDirectory && (e.entryName === 'SKILL.md' || e.entryName.endsWith('/SKILL.md')));
+    if (!skillMdEntry) {
+      res.status(400).json({ code: 'INVALID_PARAMS', message: 'Zip must contain a SKILL.md file' });
+      return;
+    }
+
+    // 确定根前缀（如果 SKILL.md 在子目录中，如 "my-skill/SKILL.md"）
+    const parts = skillMdEntry.entryName.split('/');
+    if (parts.length > 1) {
+      rootPrefix = parts.slice(0, -1).join('/') + '/';
+    }
+
+    // 解析 SKILL.md 获取 skill id
+    const skillMdContent = zip.readAsText(skillMdEntry);
+    const idMatch = skillMdContent.match(/^---[\s\S]*?^id:\s*(.+)$/m);
+    const skillId = idMatch ? idMatch[1].trim() : (rootPrefix ? parts[parts.length - 2] : req.file.originalname.replace(/\.zip$/i, ''));
+
+    if (!/^[a-zA-Z0-9_-]+$/.test(skillId)) {
+      res.status(400).json({ code: 'INVALID_PARAMS', message: `Invalid skill id "${skillId}"` });
+      return;
+    }
+
+    const skillsDir = path.join(agentDir, 'skills');
+    if (!fs.existsSync(skillsDir)) fs.mkdirSync(skillsDir, { recursive: true });
+
+    const targetDir = path.join(skillsDir, skillId);
+
+    // 如果已存在旧 .md 文件，删除
+    const legacyPath = path.join(skillsDir, `${skillId}.md`);
+    if (fs.existsSync(legacyPath)) fs.unlinkSync(legacyPath);
+
+    // 如果已存在旧目录，清空重建
+    if (fs.existsSync(targetDir)) fs.rmSync(targetDir, { recursive: true, force: true });
+    fs.mkdirSync(targetDir, { recursive: true });
+
+    // 解压文件，只保留安全路径
+    for (const entry of entries) {
+      if (entry.isDirectory) continue;
+
+      let relativePath = entry.entryName;
+      if (rootPrefix && relativePath.startsWith(rootPrefix)) {
+        relativePath = relativePath.slice(rootPrefix.length);
+      } else if (rootPrefix) {
+        continue; // 跳过不在根前缀下的文件
+      }
+
+      // 安全检查：防止路径遍历
+      const normalized = path.normalize(relativePath);
+      if (normalized.startsWith('..') || path.isAbsolute(normalized)) continue;
+
+      const destPath = path.join(targetDir, normalized);
+      const destDir = path.dirname(destPath);
+      if (!fs.existsSync(destDir)) fs.mkdirSync(destDir, { recursive: true });
+      fs.writeFileSync(destPath, entry.getData());
+    }
+
+    // 热刷新
+    discoverAndRegisterAgents(true);
+    loadProxySkills();
+
+    const skill = loadSkills(agentDir).find(s => s.id === skillId);
+    logger.info('agent.controller: uploaded skill zip', { agentId, skillId });
+    res.status(201).json({ success: true, skill });
+  } catch (err) {
+    next(err);
+  }
+}
+
+/**
+ * POST /api/agents/:id/skills/:skillId/files/:category
+ *
+ * 上传文件到 Skill 的 scripts/, references/, 或 assets/ 子目录。
+ */
+export function uploadSkillFile(req: Request, res: Response, next: NextFunction): void {
+  try {
+    const agentId = paramStr(req.params.id);
+    const agentDir = resolveAgentDir(agentId, res);
+    if (!agentDir) return;
+
+    const skillId = paramStr(req.params.skillId);
+    const category = paramStr(req.params.category);
+
+    if (!isValidCategory(category)) {
+      res.status(400).json({ code: 'INVALID_PARAMS', message: `Invalid category "${category}". Must be one of: ${SKILL_FILE_CATEGORIES.join(', ')}` });
+      return;
+    }
+
+    const skillsDir = path.join(agentDir, 'skills');
+    const loc = locateSkillPath(skillsDir, skillId);
+    if (!loc) {
+      res.status(404).json({ code: 'NOT_FOUND', message: `Skill "${skillId}" not found` });
+      return;
+    }
+
+    // 如果旧格式，先迁移到目录格式
+    let skillDir: string;
+    if (loc.type === 'file') {
+      skillDir = path.join(skillsDir, skillId);
+      fs.mkdirSync(skillDir, { recursive: true });
+      const oldContent = fs.readFileSync(loc.filePath, 'utf-8');
+      fs.writeFileSync(path.join(skillDir, 'SKILL.md'), oldContent, 'utf-8');
+      fs.unlinkSync(loc.filePath);
+    } else {
+      skillDir = loc.dirPath;
+    }
+
+    if (!req.file) {
+      res.status(400).json({ code: 'INVALID_PARAMS', message: 'No file uploaded' });
+      return;
+    }
+
+    // 安全检查：文件名不能包含路径遍历
+    const fileName = path.basename(req.file.originalname);
+    const catDir = path.join(skillDir, category);
+    if (!fs.existsSync(catDir)) fs.mkdirSync(catDir, { recursive: true });
+
+    fs.writeFileSync(path.join(catDir, fileName), req.file.buffer);
+
+    logger.info('agent.controller: uploaded skill file', { agentId, skillId, category, fileName, size: req.file.size });
+
+    // 返回更新后的文件列表
+    const skill = loadSkills(agentDir).find(s => s.id === skillId);
+    res.json({ success: true, fileName, size: req.file.size, skill });
+  } catch (err) {
+    next(err);
+  }
+}
+
+/**
+ * DELETE /api/agents/:id/skills/:skillId/files/:category/:fileName
+ *
+ * 删除 Skill 子目录中的指定文件。
+ */
+export function deleteSkillFile(req: Request, res: Response, next: NextFunction): void {
+  try {
+    const agentId = paramStr(req.params.id);
+    const agentDir = resolveAgentDir(agentId, res);
+    if (!agentDir) return;
+
+    const skillId = paramStr(req.params.skillId);
+    const category = paramStr(req.params.category);
+    const fileName = paramStr(req.params.fileName);
+
+    if (!isValidCategory(category)) {
+      res.status(400).json({ code: 'INVALID_PARAMS', message: `Invalid category "${category}"` });
+      return;
+    }
+
+    const skillsDir = path.join(agentDir, 'skills');
+    const loc = locateSkillPath(skillsDir, skillId);
+    if (!loc || loc.type !== 'dir') {
+      res.status(404).json({ code: 'NOT_FOUND', message: `Skill "${skillId}" not found or is legacy format` });
+      return;
+    }
+
+    // 安全检查：防止路径遍历
+    const safeName = path.basename(fileName);
+    const filePath = path.join(loc.dirPath, category, safeName);
+
+    if (!fs.existsSync(filePath)) {
+      res.status(404).json({ code: 'NOT_FOUND', message: `File "${safeName}" not found in ${category}/` });
+      return;
+    }
+
+    fs.unlinkSync(filePath);
+
+    logger.info('agent.controller: deleted skill file', { agentId, skillId, category, fileName: safeName });
+    const skill = loadSkills(agentDir).find(s => s.id === skillId);
+    res.json({ success: true, skill });
+  } catch (err) {
+    next(err);
+  }
+}
+
+/**
+ * GET /api/agents/:id/skills/:skillId/files/:category/:fileName
+ *
+ * 下载 Skill 子目录中的指定文件。
+ */
+export function downloadSkillFile(req: Request, res: Response, next: NextFunction): void {
+  try {
+    const agentDir = resolveAgentDir(paramStr(req.params.id), res);
+    if (!agentDir) return;
+
+    const skillId = paramStr(req.params.skillId);
+    const category = paramStr(req.params.category);
+    const fileName = paramStr(req.params.fileName);
+
+    if (!isValidCategory(category)) {
+      res.status(400).json({ code: 'INVALID_PARAMS', message: `Invalid category "${category}"` });
+      return;
+    }
+
+    const skillsDir = path.join(agentDir, 'skills');
+    const loc = locateSkillPath(skillsDir, skillId);
+    if (!loc || loc.type !== 'dir') {
+      res.status(404).json({ code: 'NOT_FOUND', message: `Skill "${skillId}" not found` });
+      return;
+    }
+
+    const safeName = path.basename(fileName);
+    const filePath = path.join(loc.dirPath, category, safeName);
+
+    if (!fs.existsSync(filePath)) {
+      res.status(404).json({ code: 'NOT_FOUND', message: `File "${safeName}" not found` });
+      return;
+    }
+
+    res.sendFile(filePath);
   } catch (err) {
     next(err);
   }

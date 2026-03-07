@@ -21,7 +21,7 @@
 ## 二、架构设计
 
 流程图（简要）
-
+多智能体系统整体架构设计：
 ```mermaid
 graph LR
   A[用户输入] --> B[代理Agent - 意图识别/领域分类]
@@ -29,6 +29,11 @@ graph LR
   C --> D[领域Agent - 完成领域任务]
   D --> E[代理Agent - 响应聚合]
   E --> F[用户输出]
+```
+
+智能体系统分层设计：
+```mermaid
+  A[用户/上一级Agent输出] --> B[大模型分析具体意图] --> C[大模型查询完成此意图需要的skills] --> D[如果有，就按skill规划完成的步骤， 没有就直接用大模型规划] --> E[根据步骤信息查找是否有可用的Skills] --> F[[如果有，就按skill规划完成的步骤， 没有就直接用大模型完成]] --> G[验证完整的完成的结果] --> H[如果完成结果不对，或者不完整，把不对或者不完整的问题输入，重新从B开始，直到完成]
 ```
 
 ### 用户输入层
@@ -650,7 +655,7 @@ WebSocket 路径：`ws://host:port/ws`
 - `agent.json` — Agent 配置（id, name, description, labels, defaultTemperature）
 - `prompt.md` — System Prompt（定义 Agent 人设和能力范围）
 - `skills/` — Markdown Skill 文件（YAML frontmatter + 正文内容）
-- `tools/` — JSON Tool 定义文件（可选）
+- `lancedb/` — JSON Tool 定义文件（可选）
 
 Skills 符合Agent Skills标准，参考https://agentskills.io/specification
 

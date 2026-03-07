@@ -49,18 +49,45 @@ class Agent {
   }
 }
 
-/// Skill 模型
+/// Skill 附属文件信息
+class SkillFile {
+  final String name;
+  final int size;
+
+  SkillFile({required this.name, required this.size});
+
+  factory SkillFile.fromJson(Map<String, dynamic> json) {
+    return SkillFile(
+      name: json['name'] as String,
+      size: (json['size'] as num?)?.toInt() ?? 0,
+    );
+  }
+}
+
+/// Skill 模型（Agent Skills 标准）
 class Skill {
   final String id;
   final String name;
   final String description;
   final String content;
+  final String? license;
+  final Map<String, String>? metadata;
+  final List<String>? allowedTools;
+  final List<SkillFile> scripts;
+  final List<SkillFile> references;
+  final List<SkillFile> assets;
 
   Skill({
     required this.id,
     required this.name,
     required this.description,
     required this.content,
+    this.license,
+    this.metadata,
+    this.allowedTools,
+    this.scripts = const [],
+    this.references = const [],
+    this.assets = const [],
   });
 
   factory Skill.fromJson(Map<String, dynamic> json) {
@@ -69,6 +96,12 @@ class Skill {
       name: json['name'] as String,
       description: (json['description'] as String?) ?? '',
       content: (json['content'] as String?) ?? '',
+      license: json['license'] as String?,
+      metadata: (json['metadata'] as Map<String, dynamic>?)?.map((k, v) => MapEntry(k, v.toString())),
+      allowedTools: (json['allowedTools'] as List<dynamic>?)?.map((e) => e.toString()).toList(),
+      scripts: (json['scripts'] as List<dynamic>?)?.map((e) => SkillFile.fromJson(e as Map<String, dynamic>)).toList() ?? [],
+      references: (json['references'] as List<dynamic>?)?.map((e) => SkillFile.fromJson(e as Map<String, dynamic>)).toList() ?? [],
+      assets: (json['assets'] as List<dynamic>?)?.map((e) => SkillFile.fromJson(e as Map<String, dynamic>)).toList() ?? [],
     );
   }
 }

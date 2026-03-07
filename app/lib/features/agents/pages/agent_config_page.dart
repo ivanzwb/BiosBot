@@ -1,10 +1,11 @@
 import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
+import 'package:file_picker/file_picker.dart';
 import '../../../models/agent.dart';
 import '../../../services/agent_service.dart';
 
-/// Agent 配置页面 — 5 Tab: 基本配置、Prompt、Skills、Tools、知识库
+/// Agent 配置页面 — 4 Tab: 基本配置、Prompt、Skills、知识库
 class AgentConfigPage extends StatefulWidget {
   final String agentId;
   const AgentConfigPage({super.key, required this.agentId});
@@ -51,12 +52,15 @@ class _AgentConfigPageState extends State<AgentConfigPage>
   Map<String, List<McpToolSimple>> _mcpServerTools = {};
   Map<String, bool> _loadingMcpTools = {};
 
+  // Skills sub-tab: 0=Skills, 1=Tools, 2=MCP
+  int _skillsSubTab = 0;
+
   bool _saving = false;
 
   @override
   void initState() {
     super.initState();
-    _tabCtrl = TabController(length: 6, vsync: this);
+    _tabCtrl = TabController(length: 4, vsync: this);
     _loadData();
   }
 
@@ -202,8 +206,6 @@ class _AgentConfigPageState extends State<AgentConfigPage>
             Tab(text: '基本配置'),
             Tab(text: 'Prompt'),
             Tab(text: 'Skills'),
-            Tab(text: 'Tools'),
-            Tab(text: 'MCP Server'),
             Tab(text: '知识库'),
           ],
         ),
@@ -215,9 +217,7 @@ class _AgentConfigPageState extends State<AgentConfigPage>
               children: [
                 _buildBasicTab(),
                 _buildPromptTab(),
-                _buildSkillsTab(),
-                _buildToolsTab(),
-                _buildMcpTab(),
+                _buildSkillsTabWrapper(),
                 _buildKbTab(),
               ],
             ),
@@ -354,6 +354,44 @@ class _AgentConfigPageState extends State<AgentConfigPage>
     );
   }
 
+  // ======================== Skills Tab Wrapper (Skills + Tools + MCP) ========================
+  Widget _buildSkillsTabWrapper() {
+    return Column(
+      children: [
+        // Skills section
+        SizedBox(
+          height: 280,
+          child: _buildSkillsTab(),
+        ),
+        const Divider(height: 1),
+        // 切换 Tools / MCP
+        Padding(
+          padding: const EdgeInsets.fromLTRB(20, 8, 20, 0),
+          child: SegmentedButton<int>(
+            segments: const [
+              ButtonSegment(value: 0, label: Text('Tools')),
+              ButtonSegment(value: 1, label: Text('MCP Server')),
+            ],
+            selected: {_skillsSubTab},
+            onSelectionChanged: (v) => setState(() => _skillsSubTab = v.first),
+            style: SegmentedButton.styleFrom(
+              textStyle: const TextStyle(fontSize: 13),
+            ),
+          ),
+        ),
+        Expanded(
+          child: IndexedStack(
+            index: _skillsSubTab,
+            children: [
+              _buildToolsTab(),
+              _buildMcpTab(),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+
   // ======================== Skills Tab ========================
   Widget _buildSkillsTab() {
     if (_loadingSkills) {
@@ -368,10 +406,28 @@ class _AgentConfigPageState extends State<AgentConfigPage>
               Text('Skills (${_skills.length})',
                   style: Theme.of(context).textTheme.titleMedium),
               const Spacer(),
+              OutlinedButton.icon(
+                icon: const Icon(Icons.archive_outlined, size: 18),
+                label: const Text('Zip'),
+                onPressed: _uploadSkillZip,
+              ),
+              const SizedBox(width: 6),
               FilledButton.icon(
                 icon: const Icon(Icons.add, size: 18),
-                label: const Text('添加'),
+                label: const Text('Skill'),
                 onPressed: () => _showSkillEditor(null),
+              ),
+              const SizedBox(width: 6),
+              OutlinedButton.icon(
+                icon: const Icon(Icons.build_outlined, size: 16),
+                label: const Text('Tool'),
+                onPressed: () => _showToolEditor(null),
+              ),
+              const SizedBox(width: 6),
+              OutlinedButton.icon(
+                icon: const Icon(Icons.cloud_outlined, size: 16),
+                label: const Text('MCP'),
+                onPressed: () => _showMcpServerEditor(null),
               ),
             ],
           ),
@@ -384,15 +440,20 @@ class _AgentConfigPageState extends State<AgentConfigPage>
                   itemCount: _skills.length,
                   itemBuilder: (context, i) {
                     final s = _skills[i];
+                    final fileCounts = [
+                      if (s.scripts.isNotEmpty) '${s.scripts.length} scripts',
+                      if (s.references.isNotEmpty) '${s.references.length} refs',
+                      if (s.assets.isNotEmpty) '${s.assets.length} assets',
+                    ];
                     return Card(
                       child: ListTile(
                         title: Text(s.name),
                         subtitle: Text(
-                          s.description.isNotEmpty
-                              ? s.description
-                              : s.content.length > 60
-                                  ? '${s.content.substring(0, 60)}...'
-                                  : s.content,
+                          [
+                            s.id,
+                            if (fileCounts.isNotEmpty) fileCounts.join(', '),
+                            if (s.description.isNotEmpty) s.description,
+                          ].join(' · '),
                           maxLines: 2,
                           overflow: TextOverflow.ellipsis,
                         ),
@@ -420,103 +481,337 @@ class _AgentConfigPageState extends State<AgentConfigPage>
     );
   }
 
+  Future<void> _uploadSkillZip() async {
+    final result = await FilePicker.platform.pickFiles(
+      type: FileType.custom,
+      allowedExtensions: ['zip'],
+    );
+    if (result == null || result.files.isEmpty) return;
+    final file = result.files.first;
+    if (file.path == null) {
+      _flash('无法获取文件路径');
+      return;
+    }
+    try {
+      await _svc.uploadSkillZip(widget.agentId, file.path!, file.name);
+      _flash('Skill Zip 已导入');
+      _loadSkills();
+    } catch (e) {
+      _flash('导入失败: $e');
+    }
+  }
+
+  Future<void> _uploadSkillFile(String skillId, String category) async {
+    final result = await FilePicker.platform.pickFiles();
+    if (result == null || result.files.isEmpty) return;
+    final file = result.files.first;
+    if (file.path == null) {
+      _flash('无法获取文件路径');
+      return;
+    }
+    try {
+      await _svc.uploadSkillFile(widget.agentId, skillId, category, file.path!, file.name);
+      _flash('文件已上传');
+      _loadSkills();
+    } catch (e) {
+      _flash('上传失败: $e');
+    }
+  }
+
+  Future<void> _deleteSkillFile(String skillId, String category, String fileName) async {
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('确认删除'),
+        content: Text('确定删除 $category/$fileName？'),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('取消')),
+          FilledButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('删除')),
+        ],
+      ),
+    );
+    if (confirm == true) {
+      try {
+        await _svc.deleteSkillFile(widget.agentId, skillId, category, fileName);
+        _flash('已删除');
+        _loadSkills();
+      } catch (e) {
+        _flash('删除失败: $e');
+      }
+    }
+  }
+
   void _showSkillEditor(Skill? existing) {
     final idCtrl = TextEditingController(text: existing?.id ?? '');
     final nameCtrl = TextEditingController(text: existing?.name ?? '');
     final descCtrl = TextEditingController(text: existing?.description ?? '');
     final contentCtrl = TextEditingController(text: existing?.content ?? '');
+    final licenseCtrl = TextEditingController(text: existing?.license ?? '');
+    final allowedToolsCtrl = TextEditingController(text: existing?.allowedTools?.join(' ') ?? '');
+    // Determine initial mode from metadata
+    final savedMcpId = existing?.metadata?['mcpServerId'] ?? '';
+    var toolMode = savedMcpId.isNotEmpty ? 'mcp' : 'tools';
+    var selectedMcpServerId = savedMcpId;
 
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
       useSafeArea: true,
-      builder: (ctx) => Padding(
-        padding: EdgeInsets.only(
-          bottom: MediaQuery.of(ctx).viewInsets.bottom,
-          left: 20,
-          right: 20,
-          top: 20,
-        ),
-        child: SingleChildScrollView(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(existing != null ? '编辑 Skill' : '新建 Skill',
-                  style: Theme.of(context).textTheme.titleMedium),
-              const SizedBox(height: 16),
-              if (existing == null)
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setSheetState) => Padding(
+          padding: EdgeInsets.only(
+            bottom: MediaQuery.of(ctx).viewInsets.bottom,
+            left: 20,
+            right: 20,
+            top: 20,
+          ),
+          child: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(existing != null ? '编辑 Skill' : '新建 Skill',
+                    style: Theme.of(context).textTheme.titleMedium),
+                const SizedBox(height: 16),
+                if (existing == null)
+                  TextField(
+                    controller: idCtrl,
+                    decoration: const InputDecoration(labelText: 'Skill ID *'),
+                  ),
+                if (existing == null) const SizedBox(height: 12),
                 TextField(
-                  controller: idCtrl,
-                  decoration: const InputDecoration(labelText: 'Skill ID *'),
+                  controller: nameCtrl,
+                  decoration: const InputDecoration(labelText: '名称 *'),
                 ),
-              if (existing == null) const SizedBox(height: 12),
-              TextField(
-                controller: nameCtrl,
-                decoration: const InputDecoration(labelText: '名称 *'),
-              ),
-              const SizedBox(height: 12),
-              TextField(
-                controller: descCtrl,
-                decoration: const InputDecoration(labelText: '描述'),
-              ),
-              const SizedBox(height: 12),
-              TextField(
-                controller: contentCtrl,
-                decoration: const InputDecoration(
-                  labelText: '内容 *',
-                  border: OutlineInputBorder(),
-                  alignLabelWithHint: true,
+                const SizedBox(height: 12),
+                TextField(
+                  controller: descCtrl,
+                  decoration: const InputDecoration(labelText: '描述'),
                 ),
-                maxLines: 6,
-              ),
-              const SizedBox(height: 16),
-              Row(
-                mainAxisAlignment: MainAxisAlignment.end,
-                children: [
-                  TextButton(
-                    onPressed: () => Navigator.pop(ctx),
-                    child: const Text('取消'),
-                  ),
-                  const SizedBox(width: 8),
-                  FilledButton(
-                    onPressed: () async {
-                      if ((existing == null && idCtrl.text.trim().isEmpty) ||
-                          nameCtrl.text.trim().isEmpty ||
-                          contentCtrl.text.trim().isEmpty) {
-                        _flash('ID、名称和内容不能为空');
-                        return;
-                      }
-                      try {
-                        if (existing != null) {
-                          await _svc.updateSkill(widget.agentId, existing.id,
-                              name: nameCtrl.text.trim(),
-                              description: descCtrl.text.trim(),
-                              content: contentCtrl.text.trim());
-                          _flash('Skill 已更新');
-                        } else {
-                          await _svc.createSkill(widget.agentId,
-                              id: idCtrl.text.trim(),
-                              name: nameCtrl.text.trim(),
-                              description: descCtrl.text.trim(),
-                              content: contentCtrl.text.trim());
-                          _flash('Skill 已创建');
-                        }
-                        if (ctx.mounted) Navigator.pop(ctx);
-                        _loadSkills();
-                      } catch (e) {
-                        _flash('保存失败: $e');
-                      }
-                    },
-                    child: const Text('保存'),
-                  ),
+                const SizedBox(height: 12),
+                TextField(
+                  controller: licenseCtrl,
+                  decoration: const InputDecoration(labelText: '许可证（可选）', hintText: '如 MIT、Apache-2.0'),
+                ),
+                const SizedBox(height: 12),
+                // 允许的工具 — Tools / MCP 二选一
+                Text('允许的工具', style: Theme.of(context).textTheme.titleSmall),
+                const SizedBox(height: 6),
+                SegmentedButton<String>(
+                  segments: const [
+                    ButtonSegment(value: 'tools', label: Text('🔧 Tools')),
+                    ButtonSegment(value: 'mcp', label: Text('🌐 MCP Server')),
+                  ],
+                  selected: {toolMode},
+                  onSelectionChanged: (v) => setSheetState(() {
+                    toolMode = v.first;
+                    allowedToolsCtrl.text = '';
+                    selectedMcpServerId = '';
+                  }),
+                  style: SegmentedButton.styleFrom(textStyle: const TextStyle(fontSize: 13)),
+                ),
+                const SizedBox(height: 8),
+                if (toolMode == 'tools') ...[
+                  Builder(builder: (_) {
+                    final agentToolNames = _tools.where((t) => t.enabled).map((t) => t.name).toList();
+                    if (agentToolNames.isEmpty) {
+                      return const Padding(
+                        padding: EdgeInsets.only(bottom: 8),
+                        child: Text('暂无可用 Tool，请先添加 Tool。', style: TextStyle(fontSize: 12, color: Colors.grey)),
+                      );
+                    }
+                    return Padding(
+                      padding: const EdgeInsets.only(bottom: 8),
+                      child: Wrap(
+                        spacing: 6,
+                        runSpacing: 4,
+                        children: agentToolNames.map((name) {
+                          return _AllowedToolChip(
+                            name: name,
+                            controller: allowedToolsCtrl,
+                            onChanged: () => setSheetState(() {}),
+                          );
+                        }).toList(),
+                      ),
+                    );
+                  }),
                 ],
-              ),
-              const SizedBox(height: 20),
-            ],
+                if (toolMode == 'mcp') ...[
+                  Builder(builder: (_) {
+                    final availableServers = _mcpServers.where((s) => s.enabled).toList();
+                    if (availableServers.isEmpty) {
+                      return const Padding(
+                        padding: EdgeInsets.only(bottom: 8),
+                        child: Text('暂无可用 MCP Server，请先添加。', style: TextStyle(fontSize: 12, color: Colors.grey)),
+                      );
+                    }
+                    return Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        DropdownButtonFormField<String>(
+                          value: selectedMcpServerId.isNotEmpty ? selectedMcpServerId : null,
+                          decoration: const InputDecoration(labelText: '选择 MCP Server'),
+                          items: availableServers.map((s) => DropdownMenuItem(value: s.id, child: Text(s.id))).toList(),
+                          onChanged: (v) => setSheetState(() {
+                            selectedMcpServerId = v ?? '';
+                            final serverTools = _mcpServerTools[selectedMcpServerId] ?? [];
+                            allowedToolsCtrl.text = serverTools.map((t) => t.name).join(' ');
+                          }),
+                        ),
+                        if (selectedMcpServerId.isNotEmpty && (_mcpServerTools[selectedMcpServerId]?.isNotEmpty ?? false)) ...[
+                          const SizedBox(height: 8),
+                          Wrap(
+                            spacing: 6,
+                            runSpacing: 4,
+                            children: _mcpServerTools[selectedMcpServerId]!.map((t) {
+                              return Chip(
+                                label: Text(t.name, style: const TextStyle(fontSize: 11)),
+                                visualDensity: VisualDensity.compact,
+                                materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                                backgroundColor: Theme.of(context).colorScheme.primaryContainer,
+                              );
+                            }).toList(),
+                          ),
+                        ],
+                        if (selectedMcpServerId.isNotEmpty && !_mcpServerTools.containsKey(selectedMcpServerId))
+                          const Padding(
+                            padding: EdgeInsets.only(top: 4),
+                            child: Text('请先在 MCP Server 列表中点击 🛠️ 获取工具列表。', style: TextStyle(fontSize: 12, color: Colors.grey)),
+                          ),
+                        const SizedBox(height: 8),
+                      ],
+                    );
+                  }),
+                ],
+                const SizedBox(height: 12),
+                TextField(
+                  controller: contentCtrl,
+                  decoration: const InputDecoration(
+                    labelText: '内容 *',
+                    border: OutlineInputBorder(),
+                    alignLabelWithHint: true,
+                  ),
+                  maxLines: 6,
+                ),
+                // 文件管理（仅编辑模式）
+                if (existing != null) ...[
+                  const SizedBox(height: 16),
+                  Text('附属文件', style: Theme.of(context).textTheme.titleSmall),
+                  const SizedBox(height: 8),
+                  for (final cat in ['scripts', 'references', 'assets'])
+                    _buildFileCategory(ctx, existing, cat, setSheetState),
+                ],
+                const SizedBox(height: 16),
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.end,
+                  children: [
+                    TextButton(
+                      onPressed: () => Navigator.pop(ctx),
+                      child: const Text('取消'),
+                    ),
+                    const SizedBox(width: 8),
+                    FilledButton(
+                      onPressed: () async {
+                        if ((existing == null && idCtrl.text.trim().isEmpty) ||
+                            nameCtrl.text.trim().isEmpty ||
+                            contentCtrl.text.trim().isEmpty) {
+                          _flash('ID、名称和内容不能为空');
+                          return;
+                        }
+                        final tools = allowedToolsCtrl.text.trim().split(RegExp(r'\s+')).where((s) => s.isNotEmpty).toList();
+                        final Map<String, String>? meta = (toolMode == 'mcp' && selectedMcpServerId.isNotEmpty)
+                            ? {'mcpServerId': selectedMcpServerId}
+                            : null;
+                        try {
+                          if (existing != null) {
+                            await _svc.updateSkill(widget.agentId, existing.id,
+                                name: nameCtrl.text.trim(),
+                                description: descCtrl.text.trim(),
+                                content: contentCtrl.text.trim(),
+                                license: licenseCtrl.text.trim(),
+                                metadata: meta,
+                                allowedTools: tools.isEmpty ? null : tools);
+                            _flash('Skill 已更新');
+                          } else {
+                            await _svc.createSkill(widget.agentId,
+                                id: idCtrl.text.trim(),
+                                name: nameCtrl.text.trim(),
+                                description: descCtrl.text.trim(),
+                                content: contentCtrl.text.trim(),
+                                license: licenseCtrl.text.trim().isEmpty ? null : licenseCtrl.text.trim(),
+                                metadata: meta,
+                                allowedTools: tools.isEmpty ? null : tools);
+                            _flash('Skill 已创建');
+                          }
+                          if (ctx.mounted) Navigator.pop(ctx);
+                          _loadSkills();
+                        } catch (e) {
+                          _flash('保存失败: $e');
+                        }
+                      },
+                      child: const Text('保存'),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 20),
+              ],
+            ),
           ),
         ),
       ),
+    );
+  }
+
+  Widget _buildFileCategory(BuildContext ctx, Skill skill, String category, StateSetter setSheetState) {
+    final List<SkillFile> files;
+    switch (category) {
+      case 'scripts': files = skill.scripts; break;
+      case 'references': files = skill.references; break;
+      case 'assets': files = skill.assets; break;
+      default: files = [];
+    }
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          children: [
+            Text('$category (${files.length})', style: const TextStyle(fontWeight: FontWeight.w500, fontSize: 13)),
+            const Spacer(),
+            TextButton.icon(
+              icon: const Icon(Icons.upload_file, size: 16),
+              label: const Text('上传', style: TextStyle(fontSize: 12)),
+              onPressed: () async {
+                await _uploadSkillFile(skill.id, category);
+                // 重新加载 skills 后刷新 sheet 用最新数据
+                final updatedSkills = await _svc.listSkills(widget.agentId);
+                setState(() => _skills = updatedSkills);
+              },
+            ),
+          ],
+        ),
+        if (files.isNotEmpty)
+          ...files.map((f) => Padding(
+            padding: const EdgeInsets.only(left: 8, bottom: 2),
+            child: Row(
+              children: [
+                Expanded(child: Text(f.name, style: const TextStyle(fontSize: 12), overflow: TextOverflow.ellipsis)),
+                Text('${(f.size / 1024).toStringAsFixed(1)} KB', style: TextStyle(fontSize: 11, color: Theme.of(ctx).colorScheme.outline)),
+                IconButton(
+                  icon: Icon(Icons.close, size: 16, color: Theme.of(ctx).colorScheme.error),
+                  onPressed: () async {
+                    await _deleteSkillFile(skill.id, category, f.name);
+                    final updatedSkills = await _svc.listSkills(widget.agentId);
+                    setState(() => _skills = updatedSkills);
+                  },
+                  constraints: const BoxConstraints(minWidth: 28, minHeight: 28),
+                  padding: EdgeInsets.zero,
+                ),
+              ],
+            ),
+          )),
+        const SizedBox(height: 4),
+      ],
     );
   }
 
@@ -560,12 +855,6 @@ class _AgentConfigPageState extends State<AgentConfigPage>
             children: [
               Text('Tools (${_tools.length})',
                   style: Theme.of(context).textTheme.titleMedium),
-              const Spacer(),
-              FilledButton.icon(
-                icon: const Icon(Icons.add, size: 18),
-                label: const Text('添加'),
-                onPressed: () => _showToolEditor(null),
-              ),
             ],
           ),
         ),
@@ -1187,12 +1476,6 @@ class _AgentConfigPageState extends State<AgentConfigPage>
             children: [
               Text('MCP Server (${_mcpServers.length})',
                   style: Theme.of(context).textTheme.titleMedium),
-              const Spacer(),
-              FilledButton.icon(
-                icon: const Icon(Icons.add, size: 18),
-                label: const Text('添加'),
-                onPressed: () => _showMcpServerEditor(null),
-              ),
             ],
           ),
         ),
@@ -1808,5 +2091,48 @@ class _AgentConfigPageState extends State<AgentConfigPage>
         _loadingMcpTools[server.id] = false;
       });
     }
+  }
+}
+
+/// Chip widget for quick tool selection in allowed-tools field.
+class _AllowedToolChip extends StatelessWidget {
+  final String name;
+  final TextEditingController controller;
+  final VoidCallback onChanged;
+
+  const _AllowedToolChip({
+    required this.name,
+    required this.controller,
+    required this.onChanged,
+  });
+
+  bool get _isSelected {
+    final list = controller.text.trim().split(RegExp(r'\s+')).where((s) => s.isNotEmpty);
+    return list.contains(name);
+  }
+
+  void _toggle() {
+    final list = controller.text.trim().split(RegExp(r'\s+')).where((s) => s.isNotEmpty).toList();
+    if (list.contains(name)) {
+      list.remove(name);
+    } else {
+      list.add(name);
+    }
+    controller.text = list.join(' ');
+    onChanged();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final selected = _isSelected;
+    return FilterChip(
+      label: Text(name, style: const TextStyle(fontSize: 11)),
+      selected: selected,
+      onSelected: (_) => _toggle(),
+      visualDensity: VisualDensity.compact,
+      materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+      showCheckmark: true,
+      padding: EdgeInsets.zero,
+    );
   }
 }

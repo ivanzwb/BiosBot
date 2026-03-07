@@ -20,7 +20,7 @@ interface Props {
 }
 
 export default function AgentConfigModal({ agent, onClose, onSaved }: Props) {
-  const [activeTab, setActiveTab] = useState<'basic' | 'prompt' | 'skills' | 'tools' | 'kb' | 'mcp'>('basic');
+  const [activeTab, setActiveTab] = useState<'basic' | 'prompt' | 'skills' | 'kb'>('basic');
   const [model, setModel] = useState('');
   const [enabled, setEnabled] = useState(true);
   const [defaultModelId, setDefaultModelId] = useState('');
@@ -41,8 +41,12 @@ export default function AgentConfigModal({ agent, onClose, onSaved }: Props) {
   const [loadingSkills, setLoadingSkills] = useState(true);
   const [showSkillForm, setShowSkillForm] = useState(false);
   const [editingSkill, setEditingSkill] = useState<api.SkillInfo | null>(null);
-  const [skillDraft, setSkillDraft] = useState({ id: '', name: '', description: '', content: '' });
+  const [skillDraft, setSkillDraft] = useState({ id: '', name: '', description: '', content: '', license: '', allowedTools: '' });
+  const [skillToolMode, setSkillToolMode] = useState<'tools' | 'mcp'>('tools');
+  const [skillMcpServerId, setSkillMcpServerId] = useState('');
   const [savingSkill, setSavingSkill] = useState(false);
+  const [uploadingZip, setUploadingZip] = useState(false);
+  const [uploadingFile, setUploadingFile] = useState<string | null>(null); // category being uploaded
 
   // Tool 状态
   const [tools, setTools] = useState<api.AgentToolConfig[]>([]);
@@ -135,13 +139,21 @@ export default function AgentConfigModal({ agent, onClose, onSaved }: Props) {
 
   const openCreateSkill = () => {
     setEditingSkill(null);
-    setSkillDraft({ id: '', name: '', description: '', content: '' });
+    setSkillDraft({ id: '', name: '', description: '', content: '', license: '', allowedTools: '' });
+    setSkillToolMode('tools');
+    setSkillMcpServerId('');
     setShowSkillForm(true);
   };
 
   const openEditSkill = (skill: api.SkillInfo) => {
     setEditingSkill(skill);
-    setSkillDraft({ id: skill.id, name: skill.name, description: skill.description, content: skill.content });
+    const savedMcpId = skill.metadata?.mcpServerId || '';
+    setSkillDraft({
+      id: skill.id, name: skill.name, description: skill.description, content: skill.content,
+      license: skill.license || '', allowedTools: (skill.allowedTools || []).join(' '),
+    });
+    setSkillToolMode(savedMcpId ? 'mcp' : 'tools');
+    setSkillMcpServerId(savedMcpId);
     setShowSkillForm(true);
   };
 
@@ -152,11 +164,20 @@ export default function AgentConfigModal({ agent, onClose, onSaved }: Props) {
     }
     setSavingSkill(true);
     try {
+      const extraFields: { license?: string; allowedTools?: string[]; metadata?: Record<string, string> } = {};
+      if (skillDraft.license.trim()) extraFields.license = skillDraft.license.trim();
+      const tools = skillDraft.allowedTools.trim().split(/\s+/).filter(Boolean);
+      if (tools.length) extraFields.allowedTools = tools;
+      if (skillToolMode === 'mcp' && skillMcpServerId) {
+        extraFields.metadata = { mcpServerId: skillMcpServerId };
+      }
+
       if (editingSkill) {
         await api.updateSkill(agent.id, editingSkill.id, {
           name: skillDraft.name.trim(),
           description: skillDraft.description.trim(),
           content: skillDraft.content.trim(),
+          ...extraFields,
         });
         setToast('Skill 已更新');
       } else {
@@ -165,6 +186,7 @@ export default function AgentConfigModal({ agent, onClose, onSaved }: Props) {
           name: skillDraft.name.trim(),
           description: skillDraft.description.trim(),
           content: skillDraft.content.trim(),
+          ...extraFields,
         });
         setToast('Skill 已创建');
       }
@@ -174,6 +196,61 @@ export default function AgentConfigModal({ agent, onClose, onSaved }: Props) {
       setToast(`保存失败: ${err instanceof Error ? err.message : String(err)}`);
     } finally {
       setSavingSkill(false);
+    }
+  };
+
+  const handleUploadSkillZip = async () => {
+    const input = document.createElement('input');
+    input.type = 'file';
+    input.accept = '.zip';
+    input.onchange = async () => {
+      const file = input.files?.[0];
+      if (!file) return;
+      setUploadingZip(true);
+      try {
+        await api.uploadSkillZip(agent.id, file);
+        setToast('Skill Zip 包已导入');
+        loadSkills();
+      } catch (err) {
+        setToast(`导入失败: ${err instanceof Error ? err.message : String(err)}`);
+      } finally {
+        setUploadingZip(false);
+      }
+    };
+    input.click();
+  };
+
+  const handleUploadSkillFile = async (skillId: string, category: 'scripts' | 'references' | 'assets') => {
+    const input = document.createElement('input');
+    input.type = 'file';
+    input.onchange = async () => {
+      const file = input.files?.[0];
+      if (!file) return;
+      setUploadingFile(category);
+      try {
+        const result = await api.uploadSkillFile(agent.id, skillId, category, file);
+        setToast(`文件 "${result.fileName}" 已上传`);
+        // refresh editing skill data
+        loadSkills();
+        if (result.skill) setEditingSkill(result.skill);
+      } catch (err) {
+        setToast(`上传失败: ${err instanceof Error ? err.message : String(err)}`);
+      } finally {
+        setUploadingFile(null);
+      }
+    };
+    input.click();
+  };
+
+  const handleDeleteSkillFile = async (skillId: string, category: 'scripts' | 'references' | 'assets', fileName: string) => {
+    if (!confirm(`确认删除 ${category}/${fileName}？`)) return;
+    try {
+      const result = await api.deleteSkillFile(agent.id, skillId, category, fileName);
+      setToast(`文件 "${fileName}" 已删除`);
+      loadSkills();
+      if (result.skill) setEditingSkill(result.skill);
+    } catch (err) {
+      setToast(`删除失败: ${err instanceof Error ? err.message : String(err)}`);
     }
   };
 
@@ -559,8 +636,6 @@ export default function AgentConfigModal({ agent, onClose, onSaved }: Props) {
                 { id: 'basic' as const, label: '基本配置' },
                 { id: 'prompt' as const, label: 'Prompt' },
                 { id: 'skills' as const, label: 'Skills' },
-                { id: 'tools' as const, label: 'Tools' },
-                { id: 'mcp' as const, label: 'MCP Server' },
                 { id: 'kb' as const, label: '知识库' },
               ].map((tab) => (
                 <button
@@ -659,12 +734,24 @@ export default function AgentConfigModal({ agent, onClose, onSaved }: Props) {
               </>
             )}
 
-            {/* ===== Tab: Skills 管理 ===== */}
+            {/* ===== Tab: Skills 管理（含 Tools、MCP 子 Tab） ===== */}
             {activeTab === 'skills' && (
               <>
               <div className={styles.kbActions}>
                 <button className={styles.kbImportBtn} onClick={openCreateSkill}>➕ 添加 Skill</button>
-                <button className={styles.kbRefreshBtn} onClick={loadSkills}>🔄</button>
+                <button className={styles.kbImportBtn} onClick={handleUploadSkillZip} disabled={uploadingZip}>
+                  {uploadingZip ? '导入中…' : '📦 导入 Zip'}
+                </button>
+                <button className={styles.kbImportBtn} onClick={openCreateTool}>🔧 添加 Tool</button>
+                <button className={styles.kbImportBtn} onClick={() => {
+                  setEditingMcp(null);
+                  setMcpDraft({ id: '', type: 'local', enabled: true, command: '', args: [], env: {}, url: '', headers: {} });
+                  setMcpEnvText('');
+                  setMcpHeadersText('');
+                  setMcpTestResult(null);
+                  setShowMcpForm(true);
+                }}>🌐 添加 MCP Server</button>
+                <button className={styles.kbRefreshBtn} onClick={() => { loadSkills(); loadTools(); }}>🔄</button>
               </div>
 
               {showSkillForm && (
@@ -699,6 +786,96 @@ export default function AgentConfigModal({ agent, onClose, onSaved }: Props) {
                     />
                   </label>
                   <label className={styles.field}>
+                    <span>许可证</span>
+                    <input
+                      value={skillDraft.license}
+                      onChange={(e) => setSkillDraft({ ...skillDraft, license: e.target.value })}
+                      placeholder="如 MIT、Apache-2.0（可选）"
+                      className={styles.select}
+                    />
+                  </label>
+                  <div className={styles.field}>
+                    <span>允许的工具</span>
+                    <div className={styles.kbModeTabs} style={{ margin: '6px 0' }}>
+                      <button
+                        className={`${styles.kbModeTab} ${skillToolMode === 'tools' ? styles.kbModeActive : ''}`}
+                        onClick={() => {
+                          setSkillToolMode('tools');
+                          setSkillDraft({ ...skillDraft, allowedTools: '' });
+                          setSkillMcpServerId('');
+                        }}
+                      >🔧 Tools</button>
+                      <button
+                        className={`${styles.kbModeTab} ${skillToolMode === 'mcp' ? styles.kbModeActive : ''}`}
+                        onClick={() => {
+                          setSkillToolMode('mcp');
+                          setSkillDraft({ ...skillDraft, allowedTools: '' });
+                          setSkillMcpServerId('');
+                        }}
+                      >🌐 MCP Server</button>
+                    </div>
+
+                    {skillToolMode === 'tools' && (() => {
+                      const currentTools = skillDraft.allowedTools.trim().split(/\s+/).filter(Boolean);
+                      const toggleTool = (name: string) => {
+                        const list = skillDraft.allowedTools.trim().split(/\s+/).filter(Boolean);
+                        const next = list.includes(name) ? list.filter(n => n !== name) : [...list, name];
+                        setSkillDraft({ ...skillDraft, allowedTools: next.join(' ') });
+                      };
+                      const agentToolNames = tools.filter(t => t.enabled !== false).map(t => t.name);
+                      return agentToolNames.length > 0 ? (
+                        <div className={styles.toolChipsPicker}>
+                          <div className={styles.toolChipsGroup}>
+                            {agentToolNames.map(name => (
+                              <button key={name} type="button"
+                                className={`${styles.toolChip} ${currentTools.includes(name) ? styles.toolChipActive : ''}`}
+                                onClick={() => toggleTool(name)}
+                              >{currentTools.includes(name) ? '✓ ' : ''}{name}</button>
+                            ))}
+                          </div>
+                        </div>
+                      ) : <p className={styles.hint}>暂无可用 Tool，请先点击上方「🔧 添加 Tool」。</p>;
+                    })()}
+
+                    {skillToolMode === 'mcp' && (
+                      <div className={styles.toolChipsPicker}>
+                        <select
+                          className={styles.select}
+                          value={skillMcpServerId}
+                          onChange={(e) => {
+                            const serverId = e.target.value;
+                            setSkillMcpServerId(serverId);
+                            if (serverId && mcpServerTools[serverId]) {
+                              setSkillDraft({ ...skillDraft, allowedTools: mcpServerTools[serverId].map(t => t.name).join(' ') });
+                            } else {
+                              setSkillDraft({ ...skillDraft, allowedTools: '' });
+                            }
+                          }}
+                        >
+                          <option value="">-- 选择 MCP Server --</option>
+                          {mcpServers.filter(s => s.enabled !== false).map(s => (
+                            <option key={s.id} value={s.id}>{s.id}</option>
+                          ))}
+                        </select>
+                        {skillMcpServerId && mcpServerTools[skillMcpServerId] && mcpServerTools[skillMcpServerId].length > 0 && (
+                          <div className={styles.toolChipsGroup} style={{ marginTop: 6 }}>
+                            {mcpServerTools[skillMcpServerId].map(t => (
+                              <span key={t.name} className={`${styles.toolChip} ${styles.toolChipActive}`}
+                                title={t.description || t.name}
+                              >✓ {t.name}</span>
+                            ))}
+                          </div>
+                        )}
+                        {skillMcpServerId && !mcpServerTools[skillMcpServerId] && (
+                          <p className={styles.hint}>请先在 MCP Server 列表中点击 🛠️ 获取该 Server 的工具列表。</p>
+                        )}
+                        {mcpServers.filter(s => s.enabled !== false).length === 0 && (
+                          <p className={styles.hint}>暂无可用 MCP Server，请先点击上方「🌐 添加 MCP Server」。</p>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                  <label className={styles.field}>
                     <span>内容（Markdown）</span>
                     <textarea
                       value={skillDraft.content}
@@ -708,6 +885,46 @@ export default function AgentConfigModal({ agent, onClose, onSaved }: Props) {
                       className={styles.kbTextarea}
                     />
                   </label>
+
+                  {/* 文件管理（仅编辑模式） */}
+                  {editingSkill && (
+                    <div className={styles.skillFilesSection}>
+                      {(['scripts', 'references', 'assets'] as const).map((cat) => {
+                        const files = editingSkill[cat] || [];
+                        return (
+                          <div key={cat} className={styles.skillFileCategory}>
+                            <div className={styles.skillFileCatHeader}>
+                              <span className={styles.skillFileCatLabel}>{cat} ({files.length})</span>
+                              <button
+                                className={styles.toolParamAddBtn}
+                                onClick={() => handleUploadSkillFile(editingSkill.id, cat)}
+                                disabled={uploadingFile === cat}
+                                type="button"
+                              >
+                                {uploadingFile === cat ? '上传中…' : '+ 上传'}
+                              </button>
+                            </div>
+                            {files.length > 0 && (
+                              <div className={styles.skillFileList}>
+                                {files.map((f) => (
+                                  <div key={f.name} className={styles.skillFileItem}>
+                                    <span className={styles.skillFileName}>{f.name}</span>
+                                    <span className={styles.skillFileSize}>{(f.size / 1024).toFixed(1)} KB</span>
+                                    <button
+                                      className={styles.kbDocDelete}
+                                      onClick={() => handleDeleteSkillFile(editingSkill.id, cat, f.name)}
+                                      title="删除"
+                                    >×</button>
+                                  </div>
+                                ))}
+                              </div>
+                            )}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+
                   <div className={styles.kbImportActions}>
                     <button className={styles.saveBtn} onClick={handleSaveSkill} disabled={savingSkill}>
                       {savingSkill ? '保存中…' : editingSkill ? '更新' : '创建'}
@@ -720,14 +937,22 @@ export default function AgentConfigModal({ agent, onClose, onSaved }: Props) {
               {loadingSkills ? (
                 <p className={styles.hint}>加载 Skills 中…</p>
               ) : skills.length === 0 ? (
-                <p className={styles.hint}>暂无 Skill。点击「添加 Skill」创建新的技能。</p>
+                <p className={styles.hint}>暂无 Skill。点击「添加 Skill」创建或「导入 Zip」上传完整技能包。</p>
               ) : (
                 <div className={styles.kbDocList}>
                   {skills.map((skill) => (
                     <div key={skill.id} className={styles.skillItem}>
                       <div className={styles.kbDocInfo}>
                         <span className={styles.kbDocTitle}>{skill.name}</span>
-                        <span className={styles.kbDocChunks}>{skill.id}</span>
+                        <span className={styles.kbDocChunks}>{skill.id}
+                          {(skill.scripts?.length || skill.references?.length || skill.assets?.length) ? (
+                            <> · {[
+                              skill.scripts?.length ? `${skill.scripts.length} scripts` : '',
+                              skill.references?.length ? `${skill.references.length} refs` : '',
+                              skill.assets?.length ? `${skill.assets.length} assets` : '',
+                            ].filter(Boolean).join(', ')}</>
+                          ) : null}
+                        </span>
                       </div>
                       <div className={styles.skillActions}>
                         <button
@@ -749,19 +974,7 @@ export default function AgentConfigModal({ agent, onClose, onSaved }: Props) {
                   ))}
                 </div>
               )}
-              </>
-            )}
 
-            {/* ===== Tab: Tools 管理 ===== */}
-            {activeTab === 'tools' && (
-              <>
-              <p className={styles.hint}>
-                配置 Agent 可调用的外部工具（HTTP API 或脚本），LLM 会根据工具描述自动决定是否调用。
-              </p>
-              <div className={styles.kbActions}>
-                <button className={styles.kbImportBtn} onClick={openCreateTool}>➕ 添加 Tool</button>
-                <button className={styles.kbRefreshBtn} onClick={loadTools}>🔄</button>
-              </div>
 
               {showToolForm && (
                 <div className={styles.kbImportForm}>
@@ -1009,143 +1222,7 @@ export default function AgentConfigModal({ agent, onClose, onSaved }: Props) {
                   ))}
                 </div>
               )}
-              </>
-            )}
 
-            {/* ===== Tab: 知识库管理 ===== */}
-            {activeTab === 'kb' && (
-              <>
-              <div className={styles.kbActions}>
-                <button className={styles.kbImportBtn} onClick={() => setShowImport(!showImport)}>
-                  📄 导入文档
-                </button>
-                {kbHasData && (
-                  <button className={styles.kbClearBtn} onClick={handleClearKb}>
-                    🗑️ 清空
-                  </button>
-                )}
-                <button className={styles.kbRefreshBtn} onClick={loadDocs}>
-                  🔄
-                </button>
-              </div>
-
-              {showImport && (
-                <div className={styles.kbImportForm}>
-                  <div className={styles.kbModeTabs}>
-                    <button
-                      className={`${styles.kbModeTab} ${importMode === 'file' ? styles.kbModeActive : ''}`}
-                      onClick={() => setImportMode('file')}
-                    >
-                      📁 文件导入
-                    </button>
-                    <button
-                      className={`${styles.kbModeTab} ${importMode === 'text' ? styles.kbModeActive : ''}`}
-                      onClick={() => setImportMode('text')}
-                    >
-                      ✏️ 文本粘贴
-                    </button>
-                  </div>
-
-                  {importMode === 'file' ? (
-                    <>
-                      <label className={styles.kbFileLabel}>
-                        <span className={styles.kbFileDrop}>
-                          {importFiles.length > 0
-                            ? importFiles.map((f) => f.name).join(', ')
-                            : '点击选择文件（支持 .txt .md .json .csv 等文本文件）'}
-                        </span>
-                        <input
-                          type="file"
-                          multiple
-                          accept=".txt,.md,.json,.csv,.log,.xml,.yaml,.yml,.html,.htm,.js,.ts,.py,.java,.c,.cpp,.go,.rs,.toml,.ini,.cfg,.conf,.sh,.bat"
-                          className={styles.kbFileInput}
-                          onChange={(e) => setImportFiles(Array.from(e.target.files || []))}
-                        />
-                      </label>
-                      {importFiles.length > 0 && (
-                        <p className={styles.hint}>
-                          已选择 {importFiles.length} 个文件，共 {(importFiles.reduce((s, f) => s + f.size, 0) / 1024).toFixed(1)} KB
-                        </p>
-                      )}
-                    </>
-                  ) : (
-                    <>
-                      <label className={styles.field}>
-                        <span>标题</span>
-                        <input
-                          value={importTitle}
-                          onChange={(e) => setImportTitle(e.target.value)}
-                          placeholder="文档标题"
-                          className={styles.select}
-                        />
-                      </label>
-                      <label className={styles.field}>
-                        <span>内容</span>
-                        <textarea
-                          value={importText}
-                          onChange={(e) => setImportText(e.target.value)}
-                          placeholder="粘贴文档内容…"
-                          rows={6}
-                          className={styles.kbTextarea}
-                        />
-                      </label>
-                    </>
-                  )}
-
-                  <div className={styles.kbImportActions}>
-                    <button
-                      className={styles.saveBtn}
-                      onClick={handleImport}
-                      disabled={importing || (importMode === 'text' ? !importText.trim() : importFiles.length === 0)}
-                    >
-                      {importing ? '导入中…' : '导入'}
-                    </button>
-                    <button className={styles.cancelBtn} onClick={() => { setShowImport(false); setImportFiles([]); }}>取消</button>
-                  </div>
-                </div>
-              )}
-
-              {loadingDocs ? (
-                <p className={styles.hint}>加载文档中…</p>
-              ) : docs.length === 0 ? (
-                <p className={styles.hint}>暂无文档。点击「导入文档」添加知识。</p>
-              ) : (
-                <div className={styles.kbDocList}>
-                  {docs.map((doc) => (
-                    <div key={doc.docId} className={styles.kbDocItem}>
-                      <div className={styles.kbDocInfo}>
-                        <span className={styles.kbDocTitle}>{doc.title}</span>
-                        <span className={styles.kbDocChunks}>{doc.chunkCount} 片段</span>
-                      </div>
-                      <button
-                        className={styles.kbDocDelete}
-                        onClick={() => handleDeleteDoc(doc.docId)}
-                        title="删除"
-                      >
-                        ×
-                      </button>
-                    </div>
-                  ))}
-                </div>
-              )}
-              </>
-            )}
-
-            {/* ===== Tab: MCP Server ===== */}
-            {activeTab === 'mcp' && (
-              <>
-              <div className={styles.kbActions}>
-                <button className={styles.kbImportBtn} onClick={() => {
-                  setEditingMcp(null);
-                  setMcpDraft({ id: '', type: 'local', enabled: true, command: '', args: [], env: {}, url: '', headers: {} });
-                  setMcpEnvText('');
-                  setMcpHeadersText('');
-                  setMcpTestResult(null);
-                  setShowMcpForm(true);
-                }}>
-                  ➕ 添加 MCP Server
-                </button>
-              </div>
 
               {showMcpForm && (
                 <div className={styles.kbImportForm}>
@@ -1638,6 +1715,124 @@ export default function AgentConfigModal({ agent, onClose, onSaved }: Props) {
                           </div>
                         </div>
                       )}
+                    </div>
+                  ))}
+                </div>
+              )}
+              </>
+            )}
+
+            {activeTab === 'kb' && (
+              <>
+              <div className={styles.kbActions}>
+                <button className={styles.kbImportBtn} onClick={() => setShowImport(!showImport)}>
+                  📄 导入文档
+                </button>
+                {kbHasData && (
+                  <button className={styles.kbClearBtn} onClick={handleClearKb}>
+                    🗑️ 清空
+                  </button>
+                )}
+                <button className={styles.kbRefreshBtn} onClick={loadDocs}>
+                  🔄
+                </button>
+              </div>
+
+              {showImport && (
+                <div className={styles.kbImportForm}>
+                  <div className={styles.kbModeTabs}>
+                    <button
+                      className={`${styles.kbModeTab} ${importMode === 'file' ? styles.kbModeActive : ''}`}
+                      onClick={() => setImportMode('file')}
+                    >
+                      📁 文件导入
+                    </button>
+                    <button
+                      className={`${styles.kbModeTab} ${importMode === 'text' ? styles.kbModeActive : ''}`}
+                      onClick={() => setImportMode('text')}
+                    >
+                      ✏️ 文本粘贴
+                    </button>
+                  </div>
+
+                  {importMode === 'file' ? (
+                    <>
+                      <label className={styles.kbFileLabel}>
+                        <span className={styles.kbFileDrop}>
+                          {importFiles.length > 0
+                            ? importFiles.map((f) => f.name).join(', ')
+                            : '点击选择文件（支持 .txt .md .json .csv 等文本文件）'}
+                        </span>
+                        <input
+                          type="file"
+                          multiple
+                          accept=".txt,.md,.json,.csv,.log,.xml,.yaml,.yml,.html,.htm,.js,.ts,.py,.java,.c,.cpp,.go,.rs,.toml,.ini,.cfg,.conf,.sh,.bat"
+                          className={styles.kbFileInput}
+                          onChange={(e) => setImportFiles(Array.from(e.target.files || []))}
+                        />
+                      </label>
+                      {importFiles.length > 0 && (
+                        <p className={styles.hint}>
+                          已选择 {importFiles.length} 个文件，共 {(importFiles.reduce((s, f) => s + f.size, 0) / 1024).toFixed(1)} KB
+                        </p>
+                      )}
+                    </>
+                  ) : (
+                    <>
+                      <label className={styles.field}>
+                        <span>标题</span>
+                        <input
+                          value={importTitle}
+                          onChange={(e) => setImportTitle(e.target.value)}
+                          placeholder="文档标题"
+                          className={styles.select}
+                        />
+                      </label>
+                      <label className={styles.field}>
+                        <span>内容</span>
+                        <textarea
+                          value={importText}
+                          onChange={(e) => setImportText(e.target.value)}
+                          placeholder="粘贴文档内容…"
+                          rows={6}
+                          className={styles.kbTextarea}
+                        />
+                      </label>
+                    </>
+                  )}
+
+                  <div className={styles.kbImportActions}>
+                    <button
+                      className={styles.saveBtn}
+                      onClick={handleImport}
+                      disabled={importing || (importMode === 'text' ? !importText.trim() : importFiles.length === 0)}
+                    >
+                      {importing ? '导入中…' : '导入'}
+                    </button>
+                    <button className={styles.cancelBtn} onClick={() => { setShowImport(false); setImportFiles([]); }}>取消</button>
+                  </div>
+                </div>
+              )}
+
+              {loadingDocs ? (
+                <p className={styles.hint}>加载文档中…</p>
+              ) : docs.length === 0 ? (
+                <p className={styles.hint}>暂无文档。点击「导入文档」添加知识。</p>
+              ) : (
+                <div className={styles.kbDocList}>
+                  {docs.map((doc) => (
+                    <div key={doc.docId} className={styles.kbDocItem}>
+                      <div className={styles.kbDocInfo}>
+                        <span className={styles.kbDocTitle}>{doc.title}</span>
+                        <span className={styles.kbDocChunks}>{doc.chunkCount} 片段</span>
+                      </div>
+                      <button
+                        className={styles.kbDocDelete}
+                        onClick={() => handleDeleteDoc(doc.docId)}
+                        title="删除"
+                      >
+                        ×
+                      </button>
                     </div>
                   ))}
                 </div>

@@ -54,6 +54,26 @@ class ApiClient {
     return _handleResponse(response);
   }
 
+  /// 文件上传（multipart/form-data）
+  Future<dynamic> uploadFile(String path, String fieldName, String filePath, String fileName) async {
+    final request = http.MultipartRequest('POST', Uri.parse('$_baseUrl$path'));
+    request.headers['Accept'] = 'application/json';
+    request.files.add(await http.MultipartFile.fromPath(fieldName, filePath, filename: fileName));
+    final streamedResponse = await request.send().timeout(Duration(milliseconds: AppConfig.requestTimeout));
+    final response = await http.Response.fromStream(streamedResponse);
+    return _handleResponse(response);
+  }
+
+  /// 从字节上传文件（multipart/form-data）
+  Future<dynamic> uploadFileBytes(String path, String fieldName, List<int> bytes, String fileName) async {
+    final request = http.MultipartRequest('POST', Uri.parse('$_baseUrl$path'));
+    request.headers['Accept'] = 'application/json';
+    request.files.add(http.MultipartFile.fromBytes(fieldName, bytes, filename: fileName));
+    final streamedResponse = await request.send().timeout(Duration(milliseconds: AppConfig.requestTimeout));
+    final response = await http.Response.fromStream(streamedResponse);
+    return _handleResponse(response);
+  }
+
   dynamic _handleResponse(http.Response response) {
     if (response.statusCode >= 200 && response.statusCode < 300) {
       if (response.body.isEmpty) return null;

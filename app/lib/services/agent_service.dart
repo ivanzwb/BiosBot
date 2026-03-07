@@ -127,12 +127,18 @@ class AgentService {
     required String name,
     String? description,
     required String content,
+    String? license,
+    Map<String, String>? metadata,
+    List<String>? allowedTools,
   }) async {
     final data = await _api.post('/agents/$agentId/skills', body: {
       'id': id,
       'name': name,
       'description': description ?? '',
       'content': content,
+      if (license != null && license.isNotEmpty) 'license': license,
+      if (metadata != null) 'metadata': metadata,
+      if (allowedTools != null && allowedTools.isNotEmpty) 'allowedTools': allowedTools,
     });
     return Skill.fromJson((data as Map<String, dynamic>)['skill']);
   }
@@ -142,17 +148,46 @@ class AgentService {
     String? name,
     String? description,
     String? content,
+    String? license,
+    Map<String, String>? metadata,
+    List<String>? allowedTools,
   }) async {
     await _api.put('/agents/$agentId/skills/${Uri.encodeComponent(skillId)}', body: {
       if (name != null) 'name': name,
       if (description != null) 'description': description,
       if (content != null) 'content': content,
+      if (license != null) 'license': license,
+      if (metadata != null) 'metadata': metadata,
+      if (allowedTools != null) 'allowedTools': allowedTools,
     });
   }
 
   /// 删除 Skill
   Future<void> deleteSkill(String agentId, String skillId) async {
     await _api.delete('/agents/$agentId/skills/${Uri.encodeComponent(skillId)}');
+  }
+
+  /// 上传 Skill Zip 包
+  Future<Skill> uploadSkillZip(String agentId, String filePath, String fileName) async {
+    final data = await _api.uploadFile(
+      '/agents/$agentId/skills/upload-zip',
+      'file', filePath, fileName,
+    );
+    return Skill.fromJson((data as Map<String, dynamic>)['skill']);
+  }
+
+  /// 上传 Skill 子目录文件（scripts/references/assets）
+  Future<Skill> uploadSkillFile(String agentId, String skillId, String category, String filePath, String fileName) async {
+    final data = await _api.uploadFile(
+      '/agents/$agentId/skills/${Uri.encodeComponent(skillId)}/files/$category',
+      'file', filePath, fileName,
+    );
+    return Skill.fromJson((data as Map<String, dynamic>)['skill']);
+  }
+
+  /// 删除 Skill 子目录文件
+  Future<void> deleteSkillFile(String agentId, String skillId, String category, String fileName) async {
+    await _api.delete('/agents/$agentId/skills/${Uri.encodeComponent(skillId)}/files/$category/${Uri.encodeComponent(fileName)}');
   }
 
   // ============================================================

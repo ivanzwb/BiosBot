@@ -6,7 +6,7 @@
 
 import { Router } from 'express';
 import { healthCheck } from '../controllers/health.controller';
-import { listAgents, refreshAgents, updateAgentConfig, createAgentConfig, deleteAgentConfig, listSkills, createSkill, updateSkill, deleteSkill, listTools, createTool, updateTool, deleteTool, scriptUploadMiddleware, uploadToolScript, listGlobalTools, createGlobalTool, updateGlobalTool, deleteGlobalTool, globalScriptUploadMiddleware, uploadGlobalToolScript, listMcpServers, getMcpServerTools, createMcpServer, updateMcpServer, deleteMcpServer, installMcpPackage, listInstalledMcpPackages, probeMcpPackageTools, testMcpServer } from '../controllers/agent.controller';
+import { listAgents, refreshAgents, updateAgentConfig, createAgentConfig, deleteAgentConfig, listSkills, createSkill, updateSkill, deleteSkill, uploadSkillZip, skillZipUploadMiddleware, uploadSkillFile, skillFileUploadMiddleware, deleteSkillFile, downloadSkillFile, listTools, createTool, updateTool, deleteTool, scriptUploadMiddleware, uploadToolScript, listGlobalTools, createGlobalTool, updateGlobalTool, deleteGlobalTool, globalScriptUploadMiddleware, uploadGlobalToolScript, listMcpServers, getMcpServerTools, createMcpServer, updateMcpServer, deleteMcpServer, installMcpPackage, listInstalledMcpPackages, probeMcpPackageTools, testMcpServer } from '../controllers/agent.controller';
 import intentRoutes from './intent.routes';
 import agentRoutes from './agent.routes';
 import chatRoutes from './chat.routes';
@@ -39,8 +39,13 @@ router.put('/agents/:id/config', updateAgentConfig);
 // Skill CRUD
 router.get('/agents/:id/skills', listSkills);
 router.post('/agents/:id/skills', createSkill);
+router.post('/agents/:id/skills/upload-zip', skillZipUploadMiddleware, uploadSkillZip);
 router.put('/agents/:id/skills/:skillId', updateSkill);
 router.delete('/agents/:id/skills/:skillId', deleteSkill);
+// Skill File Management
+router.post('/agents/:id/skills/:skillId/files/:category', skillFileUploadMiddleware, uploadSkillFile);
+router.delete('/agents/:id/skills/:skillId/files/:category/:fileName', deleteSkillFile);
+router.get('/agents/:id/skills/:skillId/files/:category/:fileName', downloadSkillFile);
 
 // Tool CRUD
 router.get('/agents/:id/tools', listTools);
