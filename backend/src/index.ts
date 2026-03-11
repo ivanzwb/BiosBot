@@ -33,11 +33,11 @@ async function bootstrap(): Promise<void> {
   runSeeds();
 
   // 2. 自动发现并注册领域 Agent（同时加载各 Agent 的 Skill）
-  const agents = discoverAndRegisterAgents();
+  const agents = await discoverAndRegisterAgents();
   logger.info(`Domain agents registered (${agents.length}): ${agents.map(a => a.id).join(', ')}`);
 
   // 3. 加载 proxy-agent 自身的 Skill
-  loadProxySkills();
+  await loadProxySkills();
 
   // 4. 创建 HTTP Server 并附加 WebSocket
   const server = createServer(app);

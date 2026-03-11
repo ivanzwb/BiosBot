@@ -39,8 +39,8 @@ export function getProxyAgentDir(): string {
 let proxySkills: Skill[] = [];
 
 /** 加载（或重新加载）proxy-agent 的 skills/ 目录 */
-export function loadProxySkills(): Skill[] {
-  proxySkills = loadSkills(path.resolve(__dirname));
+export async function loadProxySkills(): Promise<Skill[]> {
+  proxySkills = await loadSkills(path.resolve(__dirname));
   logger.info(`proxy-agent: loaded ${proxySkills.length} skill(s): [${proxySkills.map(s => s.id).join(', ')}]`);
   return proxySkills;
 }
