@@ -70,7 +70,7 @@ function getAgentDirs(): string[] {
  *  2. 否则检查 index.ts/js → 代码驱动，require 其 default export（自定义逻辑）
  *  3. 都不存在则跳过
  */
-function discoverInDir(dir: string, refresh: boolean): DomainAgent[] {
+async function discoverInDir(dir: string, refresh: boolean): Promise<DomainAgent[]> {
   const discovered: DomainAgent[] = [];
 
   let entries: string[];
@@ -98,7 +98,7 @@ function discoverInDir(dir: string, refresh: boolean): DomainAgent[] {
         const agent = createDomainAgent(agentConfig);
         // 注入 dataDir 和 loadedSkills（与代码驱动保持一致）
         agent.dataDir = agentDir;
-        agent.loadedSkills = loadSkills(agentDir);
+        agent.loadedSkills = await loadSkills(agentDir);
         discovered.push(agent);
         logger.debug(`agent-discovery: "${entry}" loaded via agent.json`);
         continue;
@@ -125,7 +125,7 @@ function discoverInDir(dir: string, refresh: boolean): DomainAgent[] {
         // 自动注入 Agent 源码目录路径，用于推导 LanceDb 等数据目录
         agent.dataDir = agentDir;
         // 自动加载 Agent 的 skills/ 子目录中定义的 Skill（Markdown 格式）
-        agent.loadedSkills = loadSkills(agentDir);
+        agent.loadedSkills = await loadSkills(agentDir);
         discovered.push(agent);
         logger.debug(`agent-discovery: "${entry}" loaded via index.ts`);
       } else {
@@ -147,7 +147,7 @@ function discoverInDir(dir: string, refresh: boolean): DomainAgent[] {
 /**
  * 从数据库加载用户创建的 Domain Agent 并创建实例。
  */
-function loadDbAgents(): DomainAgent[] {
+async function loadDbAgents(): Promise<DomainAgent[]> {
   const agents: DomainAgent[] = [];
   const dbAgents = getConfigJSON<DbAgentConfig[]>('domain_agents') || [];
 
@@ -174,7 +174,7 @@ function loadDbAgents(): DomainAgent[] {
 
       const agent = createDomainAgent(domainConfig);
       agent.dataDir = agentDir;
-      agent.loadedSkills = loadSkills(agentDir);
+      agent.loadedSkills = await loadSkills(agentDir);
       agents.push(agent);
       logger.debug(`agent-discovery: "${cfg.id}" loaded from DB`);
     } catch (err) {
@@ -190,7 +190,7 @@ function loadDbAgents(): DomainAgent[] {
  * DB 中的 Agent 优先注册，文件系统中同 id 的会被跳过。
  * 返回已注册的 DomainAgent 列表。
  */
-export function discoverAndRegisterAgents(refresh = false): DomainAgent[] {
+export async function discoverAndRegisterAgents(refresh = false): Promise<DomainAgent[]> {
   if (refresh) {
     clearRegistry();
     logger.info('agent-discovery: registry cleared for refresh');
@@ -200,7 +200,7 @@ export function discoverAndRegisterAgents(refresh = false): DomainAgent[] {
   const seenIds = new Set<string>();
 
   // ===== 优先加载 DB Agent =====
-  const dbAgents = loadDbAgents();
+  const dbAgents = await loadDbAgents();
   for (const agent of dbAgents) {
     if (seenIds.has(agent.id)) continue;
     seenIds.add(agent.id);
@@ -217,7 +217,7 @@ export function discoverAndRegisterAgents(refresh = false): DomainAgent[] {
   logger.info(`agent-discovery: scanning ${dirs.length} director(ies): ${dirs.join(', ')}`);
 
   for (const dir of dirs) {
-    const agents = discoverInDir(dir, refresh);
+    const agents = await discoverInDir(dir, refresh);
     for (const agent of agents) {
       if (seenIds.has(agent.id)) {
         logger.debug(`agent-discovery: "${agent.id}" already registered from DB, skip file-based`);

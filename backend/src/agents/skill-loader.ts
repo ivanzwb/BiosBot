@@ -11,7 +11,7 @@
  * frontmatter 之后的所有内容即为 Skill 正文（content），供 Agent 注入 prompt。
  */
 
-import * as fs from 'fs';
+import * as fs from 'fs/promises';
 import * as path from 'path';
 import { Skill, SkillFile } from '../types/skill.types';
 import logger from '../infra/logger/logger';
@@ -46,18 +46,22 @@ function parseFrontmatter(raw: string): { meta: Record<string, string>; content:
 /**
  * 列出子目录中的文件信息。
  */
-function listSubdirFiles(dir: string): SkillFile[] {
-  if (!fs.existsSync(dir)) return [];
+async function listSubdirFiles(dir: string): Promise<SkillFile[]> {
   try {
-    return fs.readdirSync(dir)
-      .filter((f) => {
-        const full = path.join(dir, f);
-        return fs.statSync(full).isFile();
-      })
-      .map((f) => {
-        const full = path.join(dir, f);
-        return { name: f, size: fs.statSync(full).size };
-      });
+    const exists = await fs.access(dir).then(() => true).catch(() => false);
+    if (!exists) return [];
+    
+    const files = await fs.readdir(dir);
+    const result: SkillFile[] = [];
+    
+    for (const f of files) {
+      const full = path.join(dir, f);
+      const stat = await fs.stat(full);
+      if (stat.isFile()) {
+        result.push({ name: f, size: stat.size });
+      }
+    }
+    return result;
   } catch {
     return [];
   }
@@ -66,12 +70,14 @@ function listSubdirFiles(dir: string): SkillFile[] {
 /**
  * 从一个 Skill 目录加载（标准格式：目录下包含 SKILL.md）。
  */
-function loadSkillFromDir(skillDir: string, dirName: string): Skill | null {
+async function loadSkillFromDir(skillDir: string, dirName: string): Promise<Skill | null> {
   const skillMdPath = path.join(skillDir, 'SKILL.md');
-  if (!fs.existsSync(skillMdPath)) return null;
-
+  
   try {
-    const raw = fs.readFileSync(skillMdPath, 'utf-8');
+    const exists = await fs.access(skillMdPath).then(() => true).catch(() => false);
+    if (!exists) return null;
+
+    const raw = await fs.readFile(skillMdPath, 'utf-8');
     const { meta, content } = parseFrontmatter(raw);
 
     const id = meta.id || dirName;
@@ -92,8 +98,6 @@ function loadSkillFromDir(skillDir: string, dirName: string): Skill | null {
     // 解析 metadata (简单的 key: value)
     let metadata: Record<string, string> | undefined;
     if (meta['metadata']) {
-      // frontmatter 里单行 metadata 不好表达多 key-value
-      // 这里暂只存一行值，多行 metadata 将在 frontmatter 中以 metadata.xxx 形式出现
       metadata = { value: meta['metadata'] };
     }
     // 支持 metadata.author / metadata.version 等
@@ -104,14 +108,21 @@ function loadSkillFromDir(skillDir: string, dirName: string): Skill | null {
       }
     }
 
+    // 并行加载 scripts, references, assets 目录
+    const [scripts, references, assets] = await Promise.all([
+      listSubdirFiles(path.join(skillDir, 'scripts')),
+      listSubdirFiles(path.join(skillDir, 'references')),
+      listSubdirFiles(path.join(skillDir, 'assets')),
+    ]);
+
     const skill: Skill = {
       id, name, description, content,
       ...(license ? { license } : {}),
       ...(metadata ? { metadata } : {}),
       ...(allowedTools ? { allowedTools } : {}),
-      scripts: listSubdirFiles(path.join(skillDir, 'scripts')),
-      references: listSubdirFiles(path.join(skillDir, 'references')),
-      assets: listSubdirFiles(path.join(skillDir, 'assets')),
+      scripts,
+      references,
+      assets,
     };
 
     logger.debug(`skill-loader: loaded skill "${id}" from dir "${skillDir}"`);
@@ -125,9 +136,9 @@ function loadSkillFromDir(skillDir: string, dirName: string): Skill | null {
 /**
  * 从单个 .md 文件加载 Skill（向后兼容旧格式）。
  */
-function loadSkillFromFile(filePath: string, fileName: string): Skill | null {
+async function loadSkillFromFile(filePath: string, fileName: string): Promise<Skill | null> {
   try {
-    const raw = fs.readFileSync(filePath, 'utf-8');
+    const raw = await fs.readFile(filePath, 'utf-8');
     const { meta, content } = parseFrontmatter(raw);
 
     const defaultId = fileName.replace(/\.md$/, '');
@@ -155,42 +166,50 @@ function loadSkillFromFile(filePath: string, fileName: string): Skill | null {
  * @param agentDir  Agent 根目录（如 agents/stock-agent）
  * @returns 已加载的 Skill 数组
  */
-export function loadSkills(agentDir: string): Skill[] {
+export async function loadSkills(agentDir: string): Promise<Skill[]> {
   const skillsDir = path.join(agentDir, 'skills');
   const loaded: Skill[] = [];
 
-  if (!fs.existsSync(skillsDir)) {
-    return loaded;
-  }
-
-  let entries: string[];
   try {
-    entries = fs.readdirSync(skillsDir);
+    const exists = await fs.access(skillsDir).then(() => true).catch(() => false);
+    if (!exists) {
+      return loaded;
+    }
   } catch (err) {
     logger.error(`skill-loader: failed to read skills dir "${skillsDir}"`, { error: err });
     return loaded;
   }
 
-  for (const entry of entries) {
+  let entries: string[];
+  try {
+    entries = await fs.readdir(skillsDir);
+  } catch (err) {
+    logger.error(`skill-loader: failed to read skills dir "${skillsDir}"`, { error: err });
+    return loaded;
+  }
+
+  // 使用 Promise.all 并行加载所有 Skill
+  const loadPromises = entries.map(async (entry) => {
     const fullPath = path.join(skillsDir, entry);
 
     try {
-      const stat = fs.statSync(fullPath);
+      const stat = await fs.stat(fullPath);
 
       if (stat.isDirectory()) {
         // 标准目录格式：skill-name/SKILL.md
-        const skill = loadSkillFromDir(fullPath, entry);
+        const skill = await loadSkillFromDir(fullPath, entry);
         if (skill) loaded.push(skill);
       } else if (entry.endsWith('.md') && stat.isFile()) {
         // 向后兼容：单个 .md 文件
-        const skill = loadSkillFromFile(fullPath, entry);
+        const skill = await loadSkillFromFile(fullPath, entry);
         if (skill) loaded.push(skill);
       }
     } catch (err) {
       logger.warn(`skill-loader: failed to process "${entry}" in "${skillsDir}"`, { error: err });
     }
-  }
+  });
 
+  await Promise.all(loadPromises);
   return loaded;
 }
 

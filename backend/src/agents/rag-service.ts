@@ -15,6 +15,81 @@ import { getLanceDbDir } from '../infra/db/lancedb.client';
 import { getConfigJSON } from '../models/config.model';
 import logger from '../infra/logger/logger';
 
+// ============================================================
+// 缓存机制
+// ============================================================
+
+/** 嵌入缓存 TTL（毫秒），默认 1 小时 */
+const EMBEDDING_CACHE_TTL = parseInt(process.env.RAG_EMBEDDING_CACHE_TTL || '3600000', 10);
+/** 搜索结果缓存 TTL（毫秒），默认 10 分钟 */
+const SEARCH_CACHE_TTL = parseInt(process.env.RAG_SEARCH_CACHE_TTL || '600000', 10);
+
+interface CacheEntry<T> {
+  value: T;
+  expiresAt: number;
+}
+
+/**
+ * 简单内存缓存，支持 TTL
+ */
+class SimpleCache<T> {
+  private cache = new Map<string, CacheEntry<T>>();
+
+  get(key: string): T | undefined {
+    const entry = this.cache.get(key);
+    if (!entry) return undefined;
+    if (Date.now() > entry.expiresAt) {
+      this.cache.delete(key);
+      return undefined;
+    }
+    return entry.value;
+  }
+
+  set(key: string, value: T, ttlMs: number): void {
+    this.cache.set(key, {
+      value,
+      expiresAt: Date.now() + ttlMs,
+    });
+  }
+
+  clear(): void {
+    this.cache.clear();
+  }
+
+  /** 定时清理过期条目 */
+  cleanup(): void {
+    const now = Date.now();
+    for (const [key, entry] of this.cache.entries()) {
+      if (now > entry.expiresAt) {
+        this.cache.delete(key);
+      }
+    }
+  }
+}
+
+/** 嵌入缓存（按文本 hash） */
+const embeddingCache = new SimpleCache<number[]>();
+
+/** 搜索结果缓存（按 agentId + query hash） */
+const searchCache = new SimpleCache<SearchResult[]>();
+
+// 定期清理过期缓存
+setInterval(() => {
+  embeddingCache.cleanup();
+  searchCache.cleanup();
+}, 60000); // 每分钟清理一次
+
+/** 计算文本 hash */
+function hashText(text: string): string {
+  let hash = 0;
+  for (let i = 0; i < text.length; i++) {
+    const char = text.charCodeAt(i);
+    hash = ((hash << 5) - hash) + char;
+    hash = hash & hash;
+  }
+  return hash.toString(16);
+}
+
 /** LanceDB 表名 */
 const TABLE_NAME = 'knowledge';
 
@@ -167,9 +242,23 @@ export async function ingestDocuments(
   }
   logger.info(`rag-service: split ${documents.length} doc(s) into ${allChunks.length} chunk(s) for "${agentId}"`);
 
-  // 2. 批量嵌入
+  // 2. 批量嵌入（带缓存）
   const texts = allChunks.map((c) => c.text);
-  const vectors = await embedModel.embedDocuments(texts);
+  const vectors: number[][] = [];
+
+  // 逐个处理，检查缓存
+  for (const text of texts) {
+    const cacheKey = hashText(text);
+    const cached = embeddingCache.get(cacheKey);
+    if (cached) {
+      vectors.push(cached);
+    } else {
+      const [vec] = await embedModel.embedDocuments([text]);
+      vectors.push(vec);
+      embeddingCache.set(cacheKey, vec, EMBEDDING_CACHE_TTL);
+    }
+  }
+  logger.info(`rag-service: embedded ${vectors.length} chunk(s) for "${agentId}" (cache used where possible)`);
 
   // 3. 构造 LanceDB 记录
   const records = allChunks.map((chunk, i) => ({
@@ -248,20 +337,31 @@ export async function searchKnowledge(
     return [];
   }
 
-  // 嵌入查询向量
+  // 嵌入查询向量（带缓存）
+  const searchCacheKey = `${agentId}:${hashText(query)}:${topK}`;
+  const cachedResults = searchCache.get(searchCacheKey);
+  if (cachedResults) {
+    logger.debug(`rag-service: cache hit for query "${query}" on agent "${agentId}"`);
+    return cachedResults;
+  }
+
   const embedModel = createEmbeddingModel(embCfg);
   const queryVector = await embedModel.embedQuery(query);
 
   // 向量检索
   const raw = await (table as any).search(queryVector).limit(topK).toArray();
 
-  return raw.map((row: any) => ({
+  const results = raw.map((row: any) => ({
     text: row.text as string,
     docId: row.doc_id as string,
     title: row.title as string,
     score: row._distance != null ? 1 / (1 + row._distance) : 0,
   }));
-}
+
+  // 缓存结果
+  searchCache.set(searchCacheKey, results, SEARCH_CACHE_TTL);
+
+  return results;
 
 /**
  * 检查某 Agent 是否已有知识库数据。

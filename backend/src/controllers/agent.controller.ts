@@ -498,12 +498,12 @@ function locateSkillPath(skillsDir: string, skillId: string): { type: 'dir' | 'f
  *
  * 列出指定 Agent 的所有 Skill（含 content）。
  */
-export function listSkills(req: Request, res: Response, next: NextFunction): void {
+export async function listSkills(req: Request, res: Response, next: NextFunction): Promise<void> {
   try {
     const agentDir = resolveAgentDir(paramStr(req.params.id), res);
     if (!agentDir) return;
 
-    const skills = loadSkills(agentDir);
+    const skills = await loadSkills(agentDir);
     res.json(skills);
   } catch (err) {
     next(err);
@@ -515,7 +515,7 @@ export function listSkills(req: Request, res: Response, next: NextFunction): voi
  *
  * 创建新的 Skill（创建 skills/<id>/SKILL.md 目录结构）。
  */
-export function createSkill(req: Request, res: Response, next: NextFunction): void {
+export async function createSkill(req: Request, res: Response, next: NextFunction): Promise<void> {
   try {
     const agentId = paramStr(req.params.id);
     const agentDir = resolveAgentDir(agentId, res);
@@ -555,10 +555,11 @@ export function createSkill(req: Request, res: Response, next: NextFunction): vo
     }), 'utf-8');
 
     // 热刷新 Agent 以加载新 Skill
-    discoverAndRegisterAgents(true);
-    loadProxySkills();
+    await discoverAndRegisterAgents(true);
+    await loadProxySkills();
 
-    const skill = loadSkills(agentDir).find(s => s.id === id);
+    const skills = await loadSkills(agentDir);
+    const skill = skills.find(s => s.id === id);
     logger.info('agent.controller: created skill', { agentId, skillId: id });
     res.status(201).json({ success: true, skill: skill || { id, name, description: description || '', content } });
   } catch (err) {
@@ -571,7 +572,7 @@ export function createSkill(req: Request, res: Response, next: NextFunction): vo
  *
  * 更新已有 Skill 的 SKILL.md 内容。支持目录格式和旧单文件格式。
  */
-export function updateSkill(req: Request, res: Response, next: NextFunction): void {
+export async function updateSkill(req: Request, res: Response, next: NextFunction): Promise<void> {
   try {
     const agentId = paramStr(req.params.id);
     const agentDir = resolveAgentDir(agentId, res);
@@ -600,7 +601,8 @@ export function updateSkill(req: Request, res: Response, next: NextFunction): vo
     }
 
     // 读取旧内容以保留未传入的字段
-    const existing = loadSkills(agentDir).find(s => s.id === skillId);
+    const allSkills = await loadSkills(agentDir);
+    const existing = allSkills.find(s => s.id === skillId);
     const merged = {
       id: skillId,
       name: name ?? existing?.name ?? skillId,
@@ -614,10 +616,11 @@ export function updateSkill(req: Request, res: Response, next: NextFunction): vo
     fs.writeFileSync(loc.filePath, serializeSkillMd(merged), 'utf-8');
 
     // 热刷新
-    discoverAndRegisterAgents(true);
-    loadProxySkills();
+    await discoverAndRegisterAgents(true);
+    await loadProxySkills();
 
-    const skill = loadSkills(agentDir).find(s => s.id === skillId);
+    const updatedSkills = await loadSkills(agentDir);
+    const skill = updatedSkills.find(s => s.id === skillId);
     logger.info('agent.controller: updated skill', { agentId, skillId });
     res.json({ success: true, skill: skill || merged });
   } catch (err) {
@@ -630,7 +633,7 @@ export function updateSkill(req: Request, res: Response, next: NextFunction): vo
  *
  * 删除指定 Skill（目录或单文件）。
  */
-export function deleteSkill(req: Request, res: Response, next: NextFunction): void {
+export async function deleteSkill(req: Request, res: Response, next: NextFunction): Promise<void> {
   try {
     const agentId = paramStr(req.params.id);
     const agentDir = resolveAgentDir(agentId, res);
@@ -652,8 +655,8 @@ export function deleteSkill(req: Request, res: Response, next: NextFunction): vo
     }
 
     // 热刷新
-    discoverAndRegisterAgents(true);
-    loadProxySkills();
+    await discoverAndRegisterAgents(true);
+    await loadProxySkills();
 
     logger.info('agent.controller: deleted skill', { agentId, skillId });
     res.json({ success: true });
@@ -696,7 +699,7 @@ function isValidCategory(cat: string): cat is SkillFileCategory {
  * 上传完整 Skill Zip 包，解压到 skills/<skill-name>/ 目录。
  * Zip 结构：根目录下必须包含 SKILL.md，可选 scripts/, references/, assets/。
  */
-export function uploadSkillZip(req: Request, res: Response, next: NextFunction): void {
+export async function uploadSkillZip(req: Request, res: Response, next: NextFunction): Promise<void> {
   try {
     const agentId = paramStr(req.params.id);
     const agentDir = resolveAgentDir(agentId, res);
@@ -769,10 +772,11 @@ export function uploadSkillZip(req: Request, res: Response, next: NextFunction):
     }
 
     // 热刷新
-    discoverAndRegisterAgents(true);
-    loadProxySkills();
+    await discoverAndRegisterAgents(true);
+    await loadProxySkills();
 
-    const skill = loadSkills(agentDir).find(s => s.id === skillId);
+    const skills = await loadSkills(agentDir);
+    const skill = skills.find(s => s.id === skillId);
     logger.info('agent.controller: uploaded skill zip', { agentId, skillId });
     res.status(201).json({ success: true, skill });
   } catch (err) {
@@ -785,7 +789,7 @@ export function uploadSkillZip(req: Request, res: Response, next: NextFunction):
  *
  * 上传文件到 Skill 的 scripts/, references/, 或 assets/ 子目录。
  */
-export function uploadSkillFile(req: Request, res: Response, next: NextFunction): void {
+export async function uploadSkillFile(req: Request, res: Response, next: NextFunction): Promise<void> {
   try {
     const agentId = paramStr(req.params.id);
     const agentDir = resolveAgentDir(agentId, res);
@@ -833,7 +837,8 @@ export function uploadSkillFile(req: Request, res: Response, next: NextFunction)
     logger.info('agent.controller: uploaded skill file', { agentId, skillId, category, fileName, size: req.file.size });
 
     // 返回更新后的文件列表
-    const skill = loadSkills(agentDir).find(s => s.id === skillId);
+    const skills = await loadSkills(agentDir);
+    const skill = skills.find(s => s.id === skillId);
     res.json({ success: true, fileName, size: req.file.size, skill });
   } catch (err) {
     next(err);
@@ -845,7 +850,7 @@ export function uploadSkillFile(req: Request, res: Response, next: NextFunction)
  *
  * 删除 Skill 子目录中的指定文件。
  */
-export function deleteSkillFile(req: Request, res: Response, next: NextFunction): void {
+export async function deleteSkillFile(req: Request, res: Response, next: NextFunction): Promise<void> {
   try {
     const agentId = paramStr(req.params.id);
     const agentDir = resolveAgentDir(agentId, res);
@@ -879,7 +884,8 @@ export function deleteSkillFile(req: Request, res: Response, next: NextFunction)
     fs.unlinkSync(filePath);
 
     logger.info('agent.controller: deleted skill file', { agentId, skillId, category, fileName: safeName });
-    const skill = loadSkills(agentDir).find(s => s.id === skillId);
+    const skills = await loadSkills(agentDir);
+    const skill = skills.find(s => s.id === skillId);
     res.json({ success: true, skill });
   } catch (err) {
     next(err);
